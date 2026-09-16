@@ -1,0 +1,14 @@
+master_prompt.txt
+prompt_lab1.txt
+
+# Node & Build
+node_modules/
+dist/
+*.log
+.env
+.env.*
+!.env.example
+
+# OS files
+Thumbs.db
+.DS_Store
