@@ -1,5 +1,6 @@
 master_prompt.txt
 prompt_lab1.txt
+/prompts
 
 # Node & Build
 node_modules/
@@ -12,3 +13,4 @@ dist/
 # OS files
 Thumbs.db
 .DS_Store
+INFO
