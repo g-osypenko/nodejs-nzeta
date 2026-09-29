@@ -15,12 +15,14 @@
 ## 2. Ключові інженерні принципи та правила
 
 ### 2.1. Мова та типізація (TypeScript Strict)
+
 - **Strict Mode:** Тільки строгий TypeScript (`strict: true`, `noImplicitAny: true`, `strictNullChecks: true`, `noUncheckedIndexedAccess: true`).
 - **Заборона `any`:** Категорично заборонено використання `any`. Для невідомих даних використовувати `unknown` з наступною валідацією через Zod або type guards.
 - **Явні типи повернення:** Усі публічні функції та методи повинні мати явний return type (`explicit-function-return-type`).
 - **ESM-модулі:** Тільки нативні ES-модулі (`"type": "module"` у `package.json`, імпорти з розширенням `.js` для локальних файлів).
 
 ### 2.2. Архітектурні межі (Modular Monolith)
+
 - **Структура директорій:**
   ```text
   src/
@@ -30,7 +32,7 @@
   ├── app.ts         # Fastify factory (реєстрація плагінів, хуків та модулів)
   └── index.ts       # Точка входу середовища (listen, smoke test, shutdown)
   ```
-- **Розділення шарів:** 
+- **Розділення шарів:**
   `Transport (Routes/Controller)` $\rightarrow$ `Domain/Service` $\rightarrow$ `Data Access (Repository)`.
   - Жодної бізнес-логіки в маршрутах/контролерах.
   - Жодного прямого звернення до бази даних з контролерів.
@@ -38,6 +40,7 @@
 - **API-контракти:** Усі маршрути починаються з `/api/v1/`. Обов'язкова наявність ендпоінту `/version` для перевірки стану та коміту.
 
 ### 2.3. Git-конвеєр та якість коду
+
 - **Хуки непорушні:** Заборонено використовувати прапорець `--no-verify` при комітах чи пушах.
 - **Pre-commit:** Завжди має проходити `lint-staged` (Prettier, ESLint) та `npm run typecheck`.
 - **Pre-push:** Завжди має проходити `npm run build` та `npm run smoke`.
