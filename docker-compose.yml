@@ -1,0 +1,21 @@
+# Isolated local database for development and smoke runs.
+# Port 55432 on purpose: never collides with a system Postgres on 5432–5434.
+services:
+  db:
+    image: postgres:17.6-alpine
+    environment:
+      POSTGRES_USER: lch
+      POSTGRES_PASSWORD: lch_dev_password
+      POSTGRES_DB: lch_lab2
+    ports:
+      - '127.0.0.1:55432:5432'
+    volumes:
+      - lch-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U lch -d lch_lab2']
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+volumes:
+  lch-pgdata:

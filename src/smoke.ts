@@ -13,7 +13,7 @@ import { loadConfig } from './shared/config.js';
 import { logger } from './shared/logger.js';
 
 dotenv.config({ quiet: true });
-logger.level = process.env['LOG_LEVEL'] ?? 'warn';
+logger.level = process.env['SMOKE_LOG_LEVEL'] ?? 'warn';
 
 const useDb = process.argv.includes('--db');
 const config = loadConfig({
@@ -68,6 +68,7 @@ async function scenario(app: App): Promise<void> {
   const password = 'smoke-password-1';
   let res = await call('POST', '/api/v1/auth/register', { body: { email, password } });
   check(res.statusCode === 201, 'register → 201', res);
+  const userId = String(json(res)['id']);
   res = await call('POST', '/api/v1/auth/register', { body: { email, password } });
   check(errorCode(res) === 'EMAIL_TAKEN', 'register same email → 409 EMAIL_TAKEN', res);
   res = await call('POST', '/api/v1/auth/register', { body: { email: 'not-an-email', password } });
@@ -213,19 +214,24 @@ async function scenario(app: App): Promise<void> {
   );
   res = await call('POST', '/api/v1/auth/login', { body: config.admin });
   const admin = String(json(res)['token']);
-  res = await call('GET', '/api/v1/admin/licenses?limit=50', { token: admin });
-  const row = res.json<Json[]>().find((l) => l['key'] === licenseKey);
+  // Several owned licenses on the page, so an N+1 in the registry becomes visible in dbQueries.
+  let issued: Json = {};
+  for (let n = 0; n < 5; n += 1) {
+    res = await call('POST', '/api/v1/admin/licenses', {
+      token: admin,
+      body: { durationDays: 7, userId },
+    });
+    issued = json(res);
+  }
+  check(res.statusCode === 201, 'admin issues 5 licenses to the user → 201', res);
+  res = await call('GET', '/api/v1/admin/licenses?limit=20', { token: admin });
+  const page = res.json<Json[]>();
+  const row = page.find((l) => l['key'] === licenseKey);
   check(row?.['ownerEmail'] === email, 'admin registry shows owner email', res);
   if (useDb) {
     const q = Number(res.headers['x-db-queries']);
-    check(
-      q <= 3,
-      `admin registry: ${q} SQL queries for ${res.json<unknown[]>().length} rows (no N+1)`,
-    );
+    check(q <= 3, `admin registry: ${q} SQL queries for a page of ${page.length} rows (no N+1)`);
   }
-  res = await call('POST', '/api/v1/admin/licenses', { token: admin, body: { durationDays: 7 } });
-  check(res.statusCode === 201, 'admin issues license → 201', res);
-  const issued = json(res);
   res = await call('POST', `/api/v1/admin/licenses/${String(issued['id'])}/ban`, { token: admin });
   check(json(res)['status'] === 'BANNED', 'admin bans license', res);
   check(

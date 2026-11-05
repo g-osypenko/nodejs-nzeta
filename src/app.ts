@@ -18,6 +18,7 @@ import { configsRoutes } from './modules/configs/configs.routes.js';
 import { licensesRoutes } from './modules/licenses/licenses.routes.js';
 import { loaderRoutes } from './modules/loader/loader.routes.js';
 import { createContext, runWithContext, type RequestContext } from './shared/context.js';
+import { isDbUnavailable } from './shared/db/errors.js';
 import { AppError } from './shared/errors.js';
 import { logger } from './shared/logger.js';
 
@@ -49,6 +50,9 @@ function mapError(error: unknown): Mapped {
   if (error instanceof ZodError) {
     const details = error.issues.map((i) => ({ path: i.path.join('.'), message: i.message }));
     return { status: 400, code: 'VALIDATION_ERROR', message: 'Request validation failed', details };
+  }
+  if (isDbUnavailable(error)) {
+    return { status: 503, code: 'DB_UNAVAILABLE', message: 'Database is temporarily unavailable' };
   }
   const fe = error as Partial<FastifyError>;
   if (typeof fe.statusCode === 'number' && fe.statusCode >= 400 && fe.statusCode < 500) {
@@ -138,6 +142,7 @@ export function buildApp(container: Container): App {
       requestId: ctx.requestId,
       processId: ctx.processId,
     };
+    if (mapped.status === 503) void reply.header('retry-after', '5');
     return reply.status(mapped.status).send(body);
   });
 
