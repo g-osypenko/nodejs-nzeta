@@ -1,72 +1,113 @@
-# Архітектурна специфікація: License & Config Hub
+# Специфікація: License & Config Hub (Завдання 2 — дані та сценарії)
 
-## 1. Призначення системи
+**Намір.** Бекенд для десктопного ПЗ комп'ютерного зору: продаж ліцензій, кабінет користувача з JSON-конфігами, адмінка ключів і швидкий шлюз handshake для лоадера з прив'язкою до HWID. Усі сценарії працюють через HTTP API спершу на статичних даних (in-memory), потім на PostgreSQL — **без змін у роутах і сервісах**.
 
-**License & Config Hub** — модульний бекенд-сервіс і високопродуктивний шлюз авторизації для десктопного ПЗ комп'ютерного зору (детекція об'єктів). Забезпечує вітрину та онлайн-продаж ліцензійних ключів, адміністрування ліцензій, зберігання JSON-конфігурацій користувачів та низьколатентну верифікацію ключів із прив'язкою до апаратного ідентифікатора (HWID).
+## 1. Модулі та сценарії (API, префікс `/api/v1`)
 
----
+| Модуль     | Сценарій                                                     | Ендпоінт                                                                                                                             | Доступ      |
+| :--------- | :----------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------- | :---------- |
+| `auth`     | реєстрація / вхід / вихід / профіль                          | `POST auth/register`, `POST auth/login`, `POST auth/logout`, `GET auth/me`                                                           | — / USER    |
+| `licenses` | вітрина тарифів                                              | `GET plans`                                                                                                                          | —           |
+|            | замовлення (checkout), стан замовлення                       | `POST orders` (заголовок `Idempotency-Key`), `GET orders/:id`                                                                        | USER (свої) |
+|            | вебхук оплати від провайдера                                 | `POST payments/webhook` (заголовок `X-Webhook-Secret`)                                                                               | провайдер   |
+|            | мої ліцензії                                                 | `GET licenses`                                                                                                                       | USER        |
+|            | адмінка: реєстр з email власника, видача, бан, скидання HWID | `GET admin/licenses?status&limit&offset`, `POST admin/licenses`, `POST admin/licenses/:id/ban`, `POST admin/licenses/:id/reset-hwid` | ADMIN       |
+| `configs`  | CRUD JSON-профілів за назвою                                 | `GET configs`, `GET/PUT/DELETE configs/:name`                                                                                        | USER (свої) |
+| `loader`   | handshake лоадера                                            | `POST loader/handshake` `{ license_key, hwid }`                                                                                      | —           |
+| система    | версія, стан БД                                              | `GET /version`, `GET /health`                                                                                                        | —           |
 
-## 2. Модульна декомпозиція (Bounded Contexts)
+**Купівля (один business process, 3 запити):** `POST orders` → замовлення `PENDING` + `processId` → провайдер шле `payments/webhook {eventId, orderId, result}` → в **одній транзакції**: подія записана, замовлення `PAID`, створено ліцензію `UNACTIVATED` (`hwid = null`, `expires_at = null`) → `GET orders/:id` повертає ключ.
 
-- **`auth`:** Реєстрація, автентифікація користувачів (JWT/сесії), розмежування прав доступу (RBAC: `USER`, `ADMIN`).
-- **`licenses`:** Вітрина тарифних планів, оформлення покупок та обробка оплати (платіжні вебхуки/checkout), адміністративне керування ліцензіями: генерація ключів (формат `APP-XXXX-YYYY-ZZZZ`), відстеження статусів (`UNACTIVATED`, `ACTIVE`, `BANNED`, `EXPIRED`), моніторинг активацій.
-- **`configs`:** Зберігання та валідація JSON-профілів параметрів клієнта (чутливість моделі, роздільна здатність, алгоритми згладжування).
-- **`loader`:** Критичний ізольований шлюз (`/api/v1/loader/handshake`) для верифікації клієнтського лоадера та атомарної прив'язки HWID.
+**Handshake:** ключ `UNACTIVATED` → **один умовний `UPDATE … WHERE hwid IS NULL`** фіксує HWID, `ACTIVE`, `activated_at = now()`, `expires_at = now() + duration_days` → `BOUND`. Далі той самий HWID → `AUTHENTICATED`, інший → `HWID_MISMATCH`. Термін іде від активації, а не від покупки.
 
----
-
-## 3. Модель даних (ER-діаграма)
+## 2. Схема БД (`migrations/`)
 
 ```mermaid
 erDiagram
-    USERS ||--o{ LICENSES : "owns / purchases"
-    USERS ||--o{ USER_CONFIGS : "manages"
-
+    USERS ||--o{ SESSIONS : has
+    USERS ||--o{ ORDERS : places
+    PLANS ||--o{ ORDERS : "is bought in"
+    ORDERS ||--o{ PAYMENT_EVENTS : receives
+    ORDERS ||--o| LICENSES : issues
+    USERS ||--o{ LICENSES : owns
+    USERS ||--o{ USER_CONFIGS : manages
     USERS {
         uuid id PK
-        string email UK "nullable"
-        string password_hash "nullable"
-        string role "USER | ADMIN"
-        datetime created_at
+        text email UK
+        text password_hash
+        text role "USER|ADMIN"
+        timestamptz created_at
     }
-
+    SESSIONS {
+        text token_hash PK "sha256"
+        uuid user_id FK
+        timestamptz expires_at
+    }
+    PLANS {
+        text id PK
+        text name
+        int duration_days
+        int price_cents
+    }
+    ORDERS {
+        uuid id PK
+        uuid user_id FK
+        text plan_id FK
+        text status "PENDING|PAID|FAILED"
+        text idempotency_key "UK(user_id, key)"
+        uuid process_id
+        timestamptz paid_at
+    }
+    PAYMENT_EVENTS {
+        text event_id PK
+        uuid order_id FK
+        text result
+    }
     LICENSES {
         uuid id PK
-        string key UK "APP-XXXX-YYYY-ZZZZ"
-        string hwid "nullable, binds on activation"
-        string status "UNACTIVATED | ACTIVE | BANNED | EXPIRED"
-        uuid user_id FK "nullable"
-        datetime activated_at "nullable"
-        datetime expires_at
-        datetime created_at
+        text key UK "APP-XXXX-XXXX-XXXX"
+        text hwid
+        text status "UNACTIVATED|ACTIVE|BANNED"
+        uuid user_id FK
+        uuid order_id FK "UK"
+        int duration_days
+        timestamptz activated_at
+        timestamptz expires_at
     }
-
     USER_CONFIGS {
         uuid id PK
         uuid user_id FK
-        string name "Profile name"
-        jsonb payload "Raw configuration data"
-        datetime updated_at
+        text name "UK(user_id, name)"
+        jsonb payload
+        timestamptz updated_at
     }
 ```
 
----
+`EXPIRED` не зберігається — обчислюється (`expires_at <= now()`), щоб не потрібен був фоновий job.
 
-## 4. Ключові сценарії взаємодії
+## 3. Помилки (формат `{ error: { code, message }, requestId, processId }`)
 
-1. **Купівля та видача ліцензії:** Користувач обирає тариф на вебсайті та оформлює покупку. Після успішної оплати (платіжний вебхук) або через адмін-панель у базі створюється запис у `LICENSES` зі статусом `UNACTIVATED`, терміном дії, прив'язкою до `user_id` покупця та `hwid = null`.
-2. **Первинний запуск лоадера (Атомарна прив'язка):**
-   - Клієнт надсилає `POST /api/v1/loader/handshake` з `{ license_key, hwid }`.
-   - Сервер перевіряє статус: якщо `UNACTIVATED` та `hwid === null`, в атомарній транзакції фіксується переданий HWID, статус змінюється на `ACTIVE`, виставляється `activated_at`. Відповідь: `200 OK (status: OK, action: BOUND)`.
-3. **Повторний запуск лоадера (Авторизація):**
-   - Якщо `incoming_hwid === license.hwid` та ліцензія активна $\rightarrow$ `200 OK (status: OK, action: AUTHENTICATED)`.
-   - Якщо `incoming_hwid !== license.hwid` $\rightarrow$ `403 Forbidden (HWID_MISMATCH)`.
-4. **Збереження та синхронізація конфігу:** Авторизований користувач передає свій JSON-профіль через `POST /api/v1/configs`, який зберігається у полі `payload` сутності `USER_CONFIGS`.
+| HTTP | Код                                                                | Коли                                                                       |
+| :--- | :----------------------------------------------------------------- | :------------------------------------------------------------------------- |
+| 400  | `VALIDATION_ERROR`                                                 | тіло/параметри не пройшли Zod, немає `Idempotency-Key`                     |
+| 401  | `UNAUTHENTICATED`, `INVALID_CREDENTIALS`, `INVALID_WEBHOOK_SECRET` | немає/прострочена сесія; хибний пароль; хибний секрет                      |
+| 403  | `FORBIDDEN`, `KEY_BANNED`, `KEY_EXPIRED`, `HWID_MISMATCH`          | чужий ресурс / не ADMIN; стан ліцензії                                     |
+| 404  | `NOT_FOUND`, `KEY_NOT_FOUND`                                       | немає ресурсу (чуже замовлення теж 404 — не розкриваємо)                   |
+| 409  | `EMAIL_TAKEN`, `IDEMPOTENCY_CONFLICT`, `ORDER_NOT_PAYABLE`         | дубль email; той самий ключ з іншим `planId`; вебхук на закрите замовлення |
+| 503  | `DB_UNAVAILABLE`                                                   | БД недоступна під час запиту (+ `Retry-After`)                             |
 
----
+## 4. Критерії прийняття
 
-## 5. Аудит залежностей (Топ-3 свідомо відхилені бібліотеки)
+1. Кожен сценарій §1 проходить через HTTP: `npm run smoke` (in-memory) і `npm run smoke:db` (Postgres) — **один і той самий** сценарій, зелений на обох.
+2. Шари: роути — лише HTTP і Zod; сервіси — бізнес-правила й перевірка доступу; SQL і транзакції — лише в `*.repository.postgres.ts`.
+3. Залежності створюються в `container.ts` і передаються одним об'єктом; `requestId`, `processId`, `userId` потрапляють у **кожен** рядок логу через `AsyncLocalStorage`, без параметрів функцій.
+4. Один глобальний обробник помилок; у коді немає `try/catch` «на все тіло».
+5. Повторний `POST orders` з тим самим `Idempotency-Key` повертає те саме замовлення; повторний вебхук з тим самим `eventId` не створює другої ліцензії.
+6. Два одночасні handshake з різними HWID на новий ключ: рівно один `BOUND`, другий `HWID_MISMATCH`.
+7. Старт без БД — процес падає одразу (`SELECT now()`) з зрозумілою помилкою; БД впала під час роботи — `503 DB_UNAVAILABLE`, після відновлення сервіс працює без перезапуску. Транзієнтні помилки (`40001`, `40P01`, обрив з'єднання) — до 3 ретраїв усієї транзакції; колізія згенерованого ключа (`23505`) — повтор генерації.
+8. Списки з даними пов'язаних сутностей (адмін-реєстр з email власника) — фіксована кількість SQL-запитів незалежно від розміру сторінки (без N+1); перевіряється полем `dbQueries` у лозі запиту.
+9. Локальна БД — `docker compose`, порт `55432`; схема лише через міграції.
 
-1. **Express.js:** Відхилено на користь **Fastify** через нижчу пропускну здатність та відсутність вбудованої компіляції схем валідації (`fast-json-stringify` / `Ajv`).
-2. **NestJS:** Відхилено через надлишковий оверхед рефлексії/декораторів та непрозорість стека викликів під час профілювання вузьких місць у Лабораторній 5.
-3. **Bcrypt:** Відхилено на користь нативного модуля `node:crypto` (`scrypt`), щоб виключити залежність від компільованих C++ бінарників (node-gyp) у CI/CD середовищі.
+## 5. Поза обсягом (свідомо)
+
+Реальний платіжний провайдер (замість нього — вебхук зі спільним секретом, без підпису HMAC); JWT і refresh-токени (непрозорі сесії в БД); rate limiting handshake; підтвердження email; кеш для `loader` (лаба 5); автоматичні тести (лаба 3).
