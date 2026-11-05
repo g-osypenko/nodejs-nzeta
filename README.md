@@ -11,78 +11,77 @@
 - **Runtime:** Node.js (v20+ LTS, ESM `"type": "module"`)
 - **Мова:** TypeScript 5.7+ у суворому режимі (`strict`, `noImplicitAny`, без `any`)
 - **HTTP Framework:** Fastify v5 (висока пропускна здатність, швидка валідація схем)
-- **Валідація:** Zod / Fastify JSON Schema
-- **Контроль якості:** ESLint 9 (flat config), Prettier
+- **Валідація:** Zod
+- **БД:** PostgreSQL 17 (Docker), драйвер `postgres` — SQL tagged templates, без ORM ([ADR 0004](./docs/adr/0004-postgres-with-sql-tagged-templates.md))
+- **Логи:** pino з автоматичними `reqId` / `processId` / `userId` (AsyncLocalStorage)
+- **Контроль якості:** ESLint 10 (flat config), Prettier
 - **Git конвеєр:** Husky 9, lint-staged (блокування "брудних" комітів на рівні хуків)
 
 ---
 
 ## 🏛 Архітектура (Modular Monolith)
 
-Система організована як модульний моноліт із суворим розділенням шарів (`Routes/Controller` $\rightarrow$ `Domain/Service` $\rightarrow$ `Data Access/Repository`):
+Шари `routes` (HTTP + Zod) → `service` (бізнес-правила, доступ) → `repository` (дані). Кожен репозиторій має дві реалізації: in-memory (статичний прототип) і PostgreSQL. Реалізацію обирає `DATA_SOURCE`, без змін у роутах і сервісах ([ADR 0005](./docs/adr/0005-composition-root-and-async-local-storage.md)).
 
 ```text
 src/
 ├── modules/
-│   ├── auth/          # Автентифікація, сесії, RBAC (User/Admin)
-│   ├── licenses/      # Вітрина планів, онлайн-продаж (checkout), адміністрування ключів
-│   ├── configs/       # Зберігання та валідація JSON-профілів
-│   └── loader/        # Критичний stateless-шлюз handshake (SLA < 15ms)
-├── shared/            # Загальні сервіси (DB, доменні помилки, логер)
-├── app.ts             # Фабрика Fastify (buildApp, плагіни, CORS)
-└── index.ts           # Точка входу середовища (listen, smoke test)
+│   ├── auth/          # реєстрація, вхід, сесії (scrypt + sha256 токенів), ролі USER/ADMIN
+│   ├── licenses/      # тарифи, замовлення з Idempotency-Key, вебхук оплати, адмін-реєстр
+│   ├── configs/       # JSON-профілі клієнта (upsert за назвою)
+│   └── loader/        # handshake лоадера: атомарна прив'язка HWID (SLA < 15 мс)
+├── shared/            # config, context (AsyncLocalStorage), logger, errors, db (pool, retry, migrate)
+├── container.ts       # composition root: ресурси → репозиторії → сервіси
+├── app.ts             # Fastify: хуки контексту, глобальний обробник помилок, роути /api/v1
+├── index.ts           # старт (fail fast) і graceful shutdown
+└── smoke.ts           # усі сценарії spec через HTTP
+migrations/            # SQL-міграції
 ```
 
-Детальний опис сутностей та ER-діаграма знаходяться у файлі [`spec.md`](./spec.md).
+Сценарії, схема БД, коди помилок і критерії прийняття — у [`spec.md`](./spec.md).
 
 ---
 
 ## 🚀 Швидкий старт
 
-### Встановлення залежностей
-
 ```bash
 npm install
-```
+cp .env.example .env
 
-### Запуск у режимі розробки (Hot-reload)
-
-```bash
+# PostgreSQL у Docker (порт 55432)
+npm run db:up && npm run db:migrate
 npm run dev
+
+# без БД: у .env поставте DATA_SOURCE=memory (статичні дані в пам'яті)
 ```
 
-### Збірка та запуск продакшн
-
-```bash
-npm run build
-npm start
-```
+Адмін створюється на старті з `ADMIN_EMAIL` / `ADMIN_PASSWORD`. За замовчуванням сервер слухає `127.0.0.1:3000`; у контейнері задайте `HOST=0.0.0.0`.
 
 ---
 
-## 🧪 Перевірка якості та команди конвеєра
+## 🧪 Команди
 
-Усі перевірки автоматизовані через `git-hooks` ([.husky/pre-commit](./.husky/pre-commit) та [.husky/pre-push](./.husky/pre-push)):
+| Команда                                  | Що робить                                                                 |
+| :--------------------------------------- | :------------------------------------------------------------------------ |
+| `npm run smoke`                          | Усі сценарії spec через HTTP на in-memory даних (запускається в pre-push) |
+| `npm run smoke:db`                       | Той самий сценарій на PostgreSQL + перевірка N+1                          |
+| `npm run db:up` / `db:down` / `db:reset` | Підняти / зупинити / перестворити локальну БД                             |
+| `npm run db:migrate`                     | Застосувати нові міграції                                                 |
+| `npm run check`                          | lint + format:check + typecheck (те саме, що pre-commit)                  |
+| `npm run build` / `npm start`            | Збірка в `dist/` і запуск                                                 |
 
-| Команда                | Опис дії                                                        |
-| :--------------------- | :-------------------------------------------------------------- |
-| `npm run smoke`        | Автономний smoke-тест (перевірка готовності екземпляра сервера) |
-| `npm run typecheck`    | Сувора перевірка типів TypeScript (`tsc --noEmit`)              |
-| `npm run lint`         | Статичний аналіз коду ESLint                                    |
-| `npm run lint:fix`     | Автоматичне виправлення проблем лінтера                         |
-| `npm run format:check` | Перевірка форматування коду Prettier                            |
-| `npm run format:write` | Автоматичне форматування коду Prettier                          |
-| `npm run build`        | Компіляція TypeScript у директорію `dist/`                      |
+Хуки: [pre-commit](./.husky/pre-commit) (lint-staged + typecheck), [pre-push](./.husky/pre-push) (build + smoke).
 
 ---
 
-## 📑 Стандарти та артефакти репозиторію
+## 📑 Документи репозиторію
 
-- [`spec.md`](./spec.md) — Архітектурна специфікація системи, ER-діаграма та ключові сценарії.
-- [`standards/definition-of-done.md`](./standards/definition-of-done.md) — Власний Definition of Done для задач.
-- [`standards/spec-template.md`](./standards/spec-template.md) — Еталонний шаблон специфікації модулів.
-- [`standards/adr/`](./standards/adr/) — Журнал архітектурних рішень (MADR):
-  - [0001: Фіксація рішень через MADR](./standards/adr/0001-record-architecture-decisions.md)
-  - [0002: Вибір Fastify над Express та NestJS](./standards/adr/0002-choose-fastify-over-express.md)
-  - [0003: Межі модульного моноліту та ізоляція Loader](./standards/adr/0003-modular-monolith-boundary.md)
-- [`DEFENSE.md`](./DEFENSE.md) — Документ для 5-хвилинного захисту лабораторної роботи перед викладачем.
+| Що                                                    | Де                                     |
+| :---------------------------------------------------- | :------------------------------------- |
+| Специфікація (сценарії, схема БД, критерії прийняття) | [`spec.md`](./spec.md)                 |
+| Захист поточної лабораторної                          | [`DEFENSE.md`](./DEFENSE.md)           |
+| Архів захистів попередніх лаб                         | [`docs/defense/`](./docs/defense/)     |
+| Архітектурні рішення (MADR)                           | [`docs/adr/`](./docs/adr/)             |
+| Власні стандарти: Definition of Done, шаблон spec     | [`docs/standards/`](./docs/standards/) |
+| Слід роботи з AI: промпти, відповіді, рев'ю виходу    | [`ai/`](./ai/)                         |
+| Правила для AI-агента                                 | [`AGENTS.md`](./AGENTS.md)             |

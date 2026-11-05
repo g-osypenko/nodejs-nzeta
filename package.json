@@ -12,14 +12,21 @@
     "lint:fix": "eslint . --fix",
     "format:check": "prettier --check .",
     "format:write": "prettier --write .",
-    "smoke": "tsx src/index.ts --smoke-test",
+    "smoke": "tsx src/smoke.ts",
     "check": "npm run lint && npm run format:check && npm run typecheck",
-    "prepare": "husky"
+    "prepare": "husky",
+    "smoke:db": "tsx src/smoke.ts --db",
+    "db:up": "docker compose up -d --wait db",
+    "db:down": "docker compose down",
+    "db:reset": "docker compose down -v && docker compose up -d --wait db && npm run db:migrate",
+    "db:migrate": "tsx src/shared/db/migrate.ts"
   },
   "dependencies": {
     "@fastify/cors": "^11.3.0",
     "dotenv": "^17.4.2",
     "fastify": "^5.12.5",
+    "pino": "10.3.1",
+    "postgres": "3.4.9",
     "zod": "^4.6.5"
   },
   "devDependencies": {
