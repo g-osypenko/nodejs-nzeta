@@ -67,10 +67,15 @@ npm run dev
 | `npm run smoke:db`                       | Той самий сценарій на PostgreSQL + перевірка N+1                          |
 | `npm run db:up` / `db:down` / `db:reset` | Підняти / зупинити / перестворити локальну БД                             |
 | `npm run db:migrate`                     | Застосувати нові міграції                                                 |
+| `npm test`                               | Unit-тести (без Docker, < 1 с; запускаються в pre-push)                   |
+| `npm run test:integration`               | Інтеграційні тести на свіжому Postgres у Testcontainers (потрібен Docker) |
+| `npm run test:e2e`                       | Збірка + E2E на процесі `node dist/index.js` з реальною БД                |
+| `npm run test:coverage`                  | Покриття unit + integration з порогами spec §6 → `reports/coverage/`      |
+| `npm run test:mutation`                  | Мутаційне тестування Stryker → `reports/mutation/` (= `make mutation`)    |
 | `npm run check`                          | lint + format:check + typecheck (те саме, що pre-commit)                  |
 | `npm run build` / `npm start`            | Збірка в `dist/` і запуск                                                 |
 
-Хуки: [pre-commit](./.husky/pre-commit) (lint-staged + typecheck), [pre-push](./.husky/pre-push) (build + smoke).
+Хуки: [pre-commit](./.husky/pre-commit) (lint-staged + typecheck), [pre-push](./.husky/pre-push) (build + unit + smoke). Звіти тестування — [`docs/testing/`](./docs/testing/).
 
 ---
 

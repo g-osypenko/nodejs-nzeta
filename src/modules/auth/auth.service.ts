@@ -62,7 +62,7 @@ export function createAuthService({ repo, sessionTtlHours }: AuthServiceDeps): A
       return user;
     },
 
-    authenticate(token) {
+    async authenticate(token) {
       return repo.findSessionUser(hashToken(token), new Date());
     },
 

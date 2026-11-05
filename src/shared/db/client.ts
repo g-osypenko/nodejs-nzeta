@@ -23,6 +23,9 @@ export function createDb({ url, max, statementTimeoutMs }: DbOptions): Db {
     // snake_case columns → camelCase fields, so rows match src/shared/db/rows.ts
     transform: { column: { from: postgres.toCamel } },
     onnotice: () => undefined,
+    // No array-type discovery query on connect: we use no custom array types, and it would be
+    // counted as an application query by the debug hook below (inflating dbQueries).
+    fetch_types: false,
     // Counts SQL statements per request: the N+1 detector behind `dbQueries` (spec.md §4.8).
     debug: () => {
       const ctx = getContext();
