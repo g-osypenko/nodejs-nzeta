@@ -1,8 +1,8 @@
 # DEFENSE — Завдання 2: сценарії на статиці → PostgreSQL, композиція, помилки
 
-**Студент:** Осипенко Г. · **PR:** `feature/lab2-data-layer → main` · Захист Лаби 1 — [`docs/defense/lab1.md`](docs/defense/lab1.md)
+**Студент:** Осипенко Г. · **PR:** `feature/lab2-data-layer → main` · Захист Лаби 1 — [`lab1.md`](lab1.md)
 
-**1. Що я просив у AI.** Спершу — проаналізувати стан репозиторію після Лаби 1 і навести лад. Потім — реалізувати всі сценарії [`spec.md`](spec.md) через HTTP API: спочатку на статичних даних, далі на PostgreSQL, за критеріями §4. Промпти й відповіді — [`ai/lab2/`](ai/lab2/), рев'ю виходу — [`ai/lab2/review.md`](ai/lab2/review.md).
+**1. Що я просив у AI.** Спершу — проаналізувати стан репозиторію після Лаби 1 і навести лад. Потім — реалізувати всі сценарії [`spec.md`](../../spec.md) через HTTP API: спочатку на статичних даних, далі на PostgreSQL, за критеріями §4. Промпти й відповіді — [`ai/lab2/`](../../ai/lab2/), рев'ю виходу — [`ai/lab2/review.md`](../../ai/lab2/review.md).
 
 **2. Топ-3 розбіжності spec ↔ вихід AI** (кожна виправлена спершу у вході — spec / AGENTS.md):
 
@@ -14,8 +14,8 @@
 
 **3. Ключові рішення.**
 
-- **БД і доступ — [ADR 0004](docs/adr/0004-postgres-with-sql-tagged-templates.md).** PostgreSQL + `postgres` (SQL tagged templates), без ORM: `ON CONFLICT`, `FOR UPDATE` і умовний `UPDATE` пишуться напряму, а кількість запитів видно. Розглядалися Drizzle, Kysely, Prisma, `pg`.
-- **Композиція — [ADR 0005](docs/adr/0005-composition-root-and-async-local-storage.md).** Ручний composition root ([`container.ts`](src/container.ts)) і AsyncLocalStorage для `requestId` / `processId` / `user`. Pino `mixin` додає їх у кожен лог. Розглядалися awilix, Effect, явне протягування `ctx`. Перехід зі статики на БД (`dafc25c`) не змінив жодного роуту чи сервісу.
+- **БД і доступ — [ADR 0004](../adr/0004-postgres-with-sql-tagged-templates.md).** PostgreSQL + `postgres` (SQL tagged templates), без ORM: `ON CONFLICT`, `FOR UPDATE` і умовний `UPDATE` пишуться напряму, а кількість запитів видно. Розглядалися Drizzle, Kysely, Prisma, `pg`.
+- **Композиція — [ADR 0005](../adr/0005-composition-root-and-async-local-storage.md).** Ручний composition root ([`container.ts`](../../src/container.ts)) і AsyncLocalStorage для `requestId` / `processId` / `user`. Pino `mixin` додає їх у кожен лог. Розглядалися awilix, Effect, явне протягування `ctx`. Перехід зі статики на БД (`dafc25c`) не змінив жодного роуту чи сервісу.
 - **Business-process ID.** Зберігається в `orders.process_id`; вебхук оплати приєднується до процесу замовлення, тож увесь checkout видно в логах під одним ID.
 
 **4. Аудит даних.**
