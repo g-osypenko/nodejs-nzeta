@@ -87,15 +87,15 @@ erDiagram
 
 ## 3. Помилки (формат `{ error: { code, message }, requestId, processId }`)
 
-| HTTP | Код                                                                | Коли                                                                                                    |
-| :--- | :----------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------ |
-| 400  | `VALIDATION_ERROR`                                                 | тіло/параметри не пройшли Zod, немає `Idempotency-Key`                                                  |
-| 401  | `UNAUTHENTICATED`, `INVALID_CREDENTIALS`, `INVALID_WEBHOOK_SECRET` | немає/прострочена сесія; хибний пароль; хибний секрет                                                   |
-| 403  | `FORBIDDEN`, `KEY_BANNED`, `KEY_EXPIRED`, `HWID_MISMATCH`          | чужий ресурс / не ADMIN; стан ліцензії                                                                  |
-| 404  | `NOT_FOUND`, `KEY_NOT_FOUND`, `ROUTE_NOT_FOUND`                    | немає ресурсу, зокрема користувача, якому видається ліцензія (чуже замовлення теж 404 — не розкриваємо) |
-| 409  | `EMAIL_TAKEN`, `IDEMPOTENCY_CONFLICT`, `ORDER_NOT_PAYABLE`         | дубль email; той самий ключ з іншим `planId`; вебхук на закрите замовлення                              |
-| 413  | `PAYLOAD_TOO_LARGE`                                                | тіло більше ліміту (конфіг > 64 KiB)                                                                    |
-| 503  | `DB_UNAVAILABLE`                                                   | БД недоступна під час запиту (+ `Retry-After`)                                                          |
+| HTTP    | Код                                                                | Коли                                                                                                    |
+| :------ | :----------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------ |
+| 400     | `VALIDATION_ERROR`, `BAD_REQUEST`                                  | тіло/параметри не пройшли Zod, немає `Idempotency-Key`; інша помилка формату запиту                     |
+| 401     | `UNAUTHENTICATED`, `INVALID_CREDENTIALS`, `INVALID_WEBHOOK_SECRET` | немає/прострочена сесія; хибний пароль; хибний секрет                                                   |
+| 403     | `FORBIDDEN`, `KEY_BANNED`, `KEY_EXPIRED`, `HWID_MISMATCH`          | чужий ресурс / не ADMIN; стан ліцензії                                                                  |
+| 404     | `NOT_FOUND`, `KEY_NOT_FOUND`, `ROUTE_NOT_FOUND`                    | немає ресурсу, зокрема користувача, якому видається ліцензія (чуже замовлення теж 404 — не розкриваємо) |
+| 409     | `EMAIL_TAKEN`, `IDEMPOTENCY_CONFLICT`, `ORDER_NOT_PAYABLE`         | дубль email; той самий ключ з іншим `planId`; вебхук на закрите замовлення                              |
+| 413/415 | `PAYLOAD_TOO_LARGE`, `UNSUPPORTED_MEDIA_TYPE`                      | тіло більше ліміту (конфіг > 64 KiB); непідтримуваний `Content-Type`                                    |
+| 503     | `DB_UNAVAILABLE`                                                   | БД недоступна під час запиту (+ `Retry-After`)                                                          |
 
 Клієнт бачить **лише** коди з цієї таблиці (+ `INTERNAL` 500): внутрішні коди фреймворку чи Postgres назовні не виходять.
 

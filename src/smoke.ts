@@ -194,6 +194,11 @@ async function scenario(app: App): Promise<void> {
     body: { payload: { ...payload, sensitivity: 3 } },
   });
   check(errorCode(res) === 'VALIDATION_ERROR', 'invalid payload → 400', res);
+  res = await call('PUT', '/api/v1/configs/huge', {
+    token,
+    body: { payload: { ...payload, pad: 'x'.repeat(70_000) } },
+  });
+  check(errorCode(res) === 'PAYLOAD_TOO_LARGE', 'config > 64 KiB → 413 PAYLOAD_TOO_LARGE', res);
   check(
     (await call('GET', '/api/v1/configs', { token })).json<unknown[]>().length === 1,
     'GET /configs → 1',
@@ -224,6 +229,11 @@ async function scenario(app: App): Promise<void> {
     issued = json(res);
   }
   check(res.statusCode === 201, 'admin issues 5 licenses to the user → 201', res);
+  res = await call('POST', '/api/v1/admin/licenses', {
+    token: admin,
+    body: { durationDays: 7, userId: randomUUID() },
+  });
+  check(errorCode(res) === 'NOT_FOUND', 'issue to a missing user → 404 (FK parity)', res);
   res = await call('GET', '/api/v1/admin/licenses?limit=20', { token: admin });
   const page = res.json<Json[]>();
   const row = page.find((l) => l['key'] === licenseKey);

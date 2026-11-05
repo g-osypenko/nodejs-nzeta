@@ -124,7 +124,15 @@ export function createPostgresLicensesRepository(sql: Db): LicensesRepository {
     },
 
     async issueLicense({ userId, durationDays, generateKey }) {
-      return sql.begin((tx) => insertLicense(tx, userId, null, durationDays, generateKey));
+      return sql.begin(async (tx) => {
+        if (userId !== null) {
+          // Check the FK target up front (FOR KEY SHARE blocks a concurrent delete) instead of
+          // letting 23503 reach the client as 500 (spec.md §4.10).
+          const [owner] = await tx`SELECT 1 FROM users WHERE id = ${userId} FOR KEY SHARE`;
+          if (!owner) throw notFound('User');
+        }
+        return insertLicense(tx, userId, null, durationDays, generateKey);
+      });
     },
 
     async banLicense(id) {

@@ -110,6 +110,8 @@ export function createMemoryLicensesRepository(store: MemoryStore): LicensesRepo
     },
 
     async issueLicense({ userId, durationDays, generateKey }) {
+      // Same FK invariant as licenses.user_id REFERENCES users (spec.md §4.10).
+      if (userId !== null && !store.users.has(userId)) throw notFound('User');
       return insertLicense(userId, null, durationDays, generateKey);
     },
 

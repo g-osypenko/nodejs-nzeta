@@ -37,6 +37,12 @@ interface Mapped {
   details?: unknown;
 }
 
+const FRAMEWORK_CODES: Record<number, string> = {
+  400: 'VALIDATION_ERROR',
+  413: 'PAYLOAD_TOO_LARGE',
+  415: 'UNSUPPORTED_MEDIA_TYPE',
+};
+
 /** Translates any thrown value into an HTTP answer. The ONLY place where errors become responses. */
 function mapError(error: unknown): Mapped {
   if (error instanceof AppError) {
@@ -56,7 +62,8 @@ function mapError(error: unknown): Mapped {
   }
   const fe = error as Partial<FastifyError>;
   if (typeof fe.statusCode === 'number' && fe.statusCode >= 400 && fe.statusCode < 500) {
-    const code = fe.statusCode === 400 ? 'VALIDATION_ERROR' : (fe.code ?? 'BAD_REQUEST');
+    // Framework codes (FST_ERR_*) never leave the server: only spec.md §3 codes (spec §3 rule).
+    const code = FRAMEWORK_CODES[fe.statusCode] ?? 'BAD_REQUEST';
     return { status: fe.statusCode, code, message: fe.message ?? 'Bad request' };
   }
   return { status: 500, code: 'INTERNAL', message: 'Internal server error' };
