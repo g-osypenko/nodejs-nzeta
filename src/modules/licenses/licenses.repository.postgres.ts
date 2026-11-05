@@ -3,7 +3,11 @@ import type { Db } from '../../shared/db/client.js';
 import { withRetry } from '../../shared/db/retry.js';
 import type { LicenseRow, OrderRow, PlanRow } from '../../shared/db/rows.js';
 import { AppError, notFound } from '../../shared/errors.js';
-import type { LicensesRepository, OrderWithLicense } from './licenses.repository.js';
+import type {
+  LicensesRepository,
+  LicenseWithOwner,
+  OrderWithLicense,
+} from './licenses.repository.js';
 
 const MAX_KEY_ATTEMPTS = 5;
 
@@ -111,10 +115,11 @@ export function createPostgresLicensesRepository(sql: Db): LicensesRepository {
     },
 
     async listLicenses({ status, limit, offset }) {
-      return sql<LicenseRow[]>`
-        SELECT * FROM licenses
-        ${status === undefined ? sql`` : sql`WHERE status = ${status}`}
-        ORDER BY created_at DESC
+      return sql<LicenseWithOwner[]>`
+        SELECT l.*, u.email AS owner_email
+        FROM licenses l LEFT JOIN users u ON u.id = l.user_id
+        ${status === undefined ? sql`` : sql`WHERE l.status = ${status}`}
+        ORDER BY l.created_at DESC
         LIMIT ${limit} OFFSET ${offset}`;
     },
 

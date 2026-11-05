@@ -12,20 +12,11 @@ import { logger } from '../../shared/logger.js';
 import type {
   LicenseFilter,
   LicensesRepository,
+  LicenseWithOwner,
   OrderWithLicense,
   PaymentOutcome,
 } from './licenses.repository.js';
 import type { WebhookEvent } from './licenses.schemas.js';
-
-/** Port for resolving license owners (implemented by the auth module's data, wired in container.ts). */
-export interface OwnerDirectory {
-  findEmail(userId: string): Promise<string | null>;
-}
-
-export interface AdminLicenseView {
-  license: LicenseRow;
-  ownerEmail: string | null;
-}
 
 export interface LicensesService {
   listPlans(): Promise<PlanRow[]>;
@@ -36,7 +27,7 @@ export interface LicensesService {
   getOrder(id: string): Promise<OrderWithLicense>;
   handleWebhook(secret: string, event: WebhookEvent): Promise<PaymentOutcome>;
   myLicenses(): Promise<LicenseRow[]>;
-  adminList(filter: LicenseFilter): Promise<AdminLicenseView[]>;
+  adminList(filter: LicenseFilter): Promise<LicenseWithOwner[]>;
   adminIssue(input: { userId: string | null; durationDays: number }): Promise<LicenseRow>;
   adminBan(id: string): Promise<LicenseRow>;
   adminResetHwid(id: string): Promise<LicenseRow>;
@@ -44,7 +35,6 @@ export interface LicensesService {
 
 export interface LicensesServiceDeps {
   repo: LicensesRepository;
-  owners: OwnerDirectory;
   webhookSecret: string;
 }
 
@@ -56,7 +46,6 @@ function secretMatches(given: string, expected: string): boolean {
 
 export function createLicensesService({
   repo,
-  owners,
   webhookSecret,
 }: LicensesServiceDeps): LicensesService {
   const service: LicensesService = {
@@ -118,13 +107,8 @@ export function createLicensesService({
 
     async adminList(filter) {
       requireRole('ADMIN');
-      const licenses = await repo.listLicenses(filter);
-      const views: AdminLicenseView[] = [];
-      for (const license of licenses) {
-        const ownerEmail = license.userId ? await owners.findEmail(license.userId) : null;
-        views.push({ license, ownerEmail });
-      }
-      return views;
+      // The repository returns the ready read model (one JOIN), never fetch owners row by row.
+      return repo.listLicenses(filter);
     },
 
     async adminIssue({ userId, durationDays }) {

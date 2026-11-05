@@ -34,6 +34,11 @@ export interface LicenseFilter {
   offset: number;
 }
 
+/** Admin registry read model: license + owner email, produced by a single query. */
+export interface LicenseWithOwner extends LicenseRow {
+  ownerEmail: string | null;
+}
+
 export interface NewLicense {
   userId: string | null;
   durationDays: number;
@@ -54,7 +59,8 @@ export interface LicensesRepository {
    */
   applyPayment(input: PaymentInput): Promise<PaymentOutcome>;
   listUserLicenses(userId: string): Promise<LicenseRow[]>;
-  listLicenses(filter: LicenseFilter): Promise<LicenseRow[]>;
+  /** One query regardless of page size (no N+1, spec.md §4.8). */
+  listLicenses(filter: LicenseFilter): Promise<LicenseWithOwner[]>;
   issueLicense(input: NewLicense): Promise<LicenseRow>;
   banLicense(id: string): Promise<LicenseRow | null>;
   resetHwid(id: string): Promise<LicenseRow | null>;

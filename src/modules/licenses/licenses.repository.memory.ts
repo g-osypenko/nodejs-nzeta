@@ -102,7 +102,11 @@ export function createMemoryLicensesRepository(store: MemoryStore): LicensesRepo
       return [...store.licenses.values()]
         .filter((l) => status === undefined || l.status === status)
         .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
-        .slice(offset, offset + limit);
+        .slice(offset, offset + limit)
+        .map((l) => ({
+          ...l,
+          ownerEmail: l.userId ? (store.users.get(l.userId)?.email ?? null) : null,
+        }));
     },
 
     async issueLicense({ userId, durationDays, generateKey }) {

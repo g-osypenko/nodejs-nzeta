@@ -43,7 +43,7 @@ export function licensesRoutes(licenses: LicensesService): FastifyPluginAsync {
     // --- admin ---
     app.get('/admin/licenses', async (request) => {
       const views = await licenses.adminList(AdminListQuery.parse(request.query));
-      return views.map((v) => ({ ...toLicenseDto(v.license), ownerEmail: v.ownerEmail }));
+      return views.map((l) => ({ ...toLicenseDto(l), ownerEmail: l.ownerEmail }));
     });
 
     app.post('/admin/licenses', async (request, reply) => {

@@ -106,7 +106,6 @@ export async function createContainer(config: AppConfig): Promise<Container> {
     auth: createAuthService({ repo: repos.auth, sessionTtlHours: config.sessionTtlHours }),
     licenses: createLicensesService({
       repo: repos.licenses,
-      owners: { findEmail: async (id) => (await repos.auth.findUserById(id))?.email ?? null },
       webhookSecret: config.webhookSecret,
     }),
     configs: createConfigsService({ repo: repos.configs }),
