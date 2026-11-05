@@ -3,7 +3,7 @@ import { z } from 'zod';
 const EnvSchema = z
   .object({
     PORT: z.coerce.number().int().positive().default(3000),
-    HOST: z.string().min(1).default('0.0.0.0'),
+    HOST: z.string().min(1).default('127.0.0.1'), // loopback by default; set 0.0.0.0 explicitly in containers
     DATA_SOURCE: z.enum(['memory', 'postgres']).default('postgres'),
     DATABASE_URL: z.string().min(1).optional(),
     DB_POOL_MAX: z.coerce.number().int().positive().default(10),
