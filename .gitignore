@@ -1,16 +1,16 @@
-master_prompt.txt
-prompt_lab1.txt
-/prompts
-
-# Node & Build
+# Node & build
 node_modules/
 dist/
 *.log
+
+# Environment
 .env
 .env.*
 !.env.example
 
+# Local course materials (tasks, lectures, teacher's DoD) — not part of the project
+INFO/
+
 # OS files
 Thumbs.db
 .DS_Store
-INFO

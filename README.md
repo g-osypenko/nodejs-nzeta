@@ -12,7 +12,7 @@
 - **Мова:** TypeScript 5.7+ у суворому режимі (`strict`, `noImplicitAny`, без `any`)
 - **HTTP Framework:** Fastify v5 (висока пропускна здатність, швидка валідація схем)
 - **Валідація:** Zod / Fastify JSON Schema
-- **Контроль якості:** ESLint 9 (flat config), Prettier
+- **Контроль якості:** ESLint 10 (flat config), Prettier
 - **Git конвеєр:** Husky 9, lint-staged (блокування "брудних" комітів на рівні хуків)
 
 ---
@@ -76,13 +76,14 @@ npm start
 
 ---
 
-## 📑 Стандарти та артефакти репозиторію
+## 📑 Документи репозиторію
 
-- [`spec.md`](./spec.md) — Архітектурна специфікація системи, ER-діаграма та ключові сценарії.
-- [`standards/definition-of-done.md`](./standards/definition-of-done.md) — Власний Definition of Done для задач.
-- [`standards/spec-template.md`](./standards/spec-template.md) — Еталонний шаблон специфікації модулів.
-- [`standards/adr/`](./standards/adr/) — Журнал архітектурних рішень (MADR):
-  - [0001: Фіксація рішень через MADR](./standards/adr/0001-record-architecture-decisions.md)
-  - [0002: Вибір Fastify над Express та NestJS](./standards/adr/0002-choose-fastify-over-express.md)
-  - [0003: Межі модульного моноліту та ізоляція Loader](./standards/adr/0003-modular-monolith-boundary.md)
-- [`DEFENSE.md`](./DEFENSE.md) — Документ для 5-хвилинного захисту лабораторної роботи перед викладачем.
+| Що                                                    | Де                                     |
+| :---------------------------------------------------- | :------------------------------------- |
+| Специфікація (сценарії, схема БД, критерії прийняття) | [`spec.md`](./spec.md)                 |
+| Захист поточної лабораторної                          | [`DEFENSE.md`](./DEFENSE.md)           |
+| Архів захистів попередніх лаб                         | [`docs/defense/`](./docs/defense/)     |
+| Архітектурні рішення (MADR)                           | [`docs/adr/`](./docs/adr/)             |
+| Власні стандарти: Definition of Done, шаблон spec     | [`docs/standards/`](./docs/standards/) |
+| Слід роботи з AI: промпти, відповіді, рев'ю виходу    | [`ai/`](./ai/)                         |
+| Правила для AI-агента                                 | [`AGENTS.md`](./AGENTS.md)             |
