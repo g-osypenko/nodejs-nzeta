@@ -1,6 +1,6 @@
-.PHONY: all dev build start typecheck lint format check smoke
+.PHONY: all dev build start typecheck lint format check smoke test test-integration test-e2e coverage mutation
 
-all: check build smoke
+all: check build test smoke
 
 dev:
 	npm run dev
@@ -27,3 +27,19 @@ check:
 
 smoke:
 	npm run smoke
+
+# Lab 3 — test levels (spec.md §6). Integration and e2e need Docker (Testcontainers).
+test:
+	npm test
+
+test-integration:
+	npm run test:integration
+
+test-e2e:
+	npm run test:e2e
+
+coverage:
+	npm run test:coverage
+
+mutation:
+	npm run test:mutation
