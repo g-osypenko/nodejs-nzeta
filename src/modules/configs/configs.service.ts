@@ -15,7 +15,7 @@ export interface ConfigsService {
 /** Every operation is scoped to the current user: a user can never address another user's profile. */
 export function createConfigsService({ repo }: { repo: ConfigsRepository }): ConfigsService {
   const service: ConfigsService = {
-    list() {
+    async list() {
       return repo.listNames(requireUser().id);
     },
 

@@ -49,7 +49,7 @@ export function createLicensesService({
   webhookSecret,
 }: LicensesServiceDeps): LicensesService {
   const service: LicensesService = {
-    listPlans() {
+    async listPlans() {
       return repo.listPlans();
     },
 
@@ -101,7 +101,7 @@ export function createLicensesService({
       return outcome;
     },
 
-    myLicenses() {
+    async myLicenses() {
       return repo.listUserLicenses(requireUser().id);
     },
 
