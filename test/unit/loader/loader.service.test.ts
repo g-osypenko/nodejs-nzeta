@@ -58,6 +58,30 @@ describe('loader.service handshake (memory repository)', () => {
     expect(again).toEqual({ action: 'AUTHENTICATED', expiresAt: bound.expiresAt });
   });
 
+  // Added after mutation testing: `if (license.hwid === null)` → `if (true)` survived with 100% line
+  // coverage. Outputs stay identical, but every handshake of an already bound key would run a useless
+  // UPDATE + extra SELECT on the SLA path. The hot path must be ONE read (docs/testing/mutation-report.md).
+  it('bound key: AUTHENTICATED and HWID_MISMATCH never attempt a bind (one read, no write)', async () => {
+    const memory = createMemoryLoaderRepository(store);
+    const calls = { find: 0, bind: 0 };
+    const counting: LoaderRepository = {
+      findByKey: (key) => (calls.find++, memory.findByKey(key)),
+      bindHwid: (key, hwid, now) => (calls.bind++, memory.bindHwid(key, hwid, now)),
+    };
+    const svc = createLoaderService({ repo: counting });
+    const license = seedLicense(store, {
+      status: 'ACTIVE',
+      hwid: HWID_A,
+      activatedAt: new Date(),
+      expiresAt: new Date(Date.now() + DAY_MS),
+    });
+
+    await svc.handshake(license.key, HWID_A);
+    expect(await errorCodeOf(svc.handshake(license.key, HWID_B))).toBe('HWID_MISMATCH');
+
+    expect(calls).toEqual({ find: 2, bind: 0 });
+  });
+
   it('another HWID on a bound key → HWID_MISMATCH and the binding is kept', async () => {
     const license = seedLicense(store);
     await loader.handshake(license.key, HWID_A);

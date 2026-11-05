@@ -84,6 +84,28 @@ describe('config (env validation, fail fast)', () => {
     expect(loadConfig({ ...base, DATABASE_URL: 'postgres://x' }).databaseUrl).toBe('postgres://x');
   });
 
+  // Added after mutation testing: `min(1)` → `max(1)` on HOST / GIT_COMMIT survived because no test
+  // ever passed them explicitly — a schema rejecting every real host would have stayed green.
+  it('accepts explicit HOST and GIT_COMMIT values, rejects empty ones', () => {
+    const c = loadConfig({
+      ...base,
+      DATA_SOURCE: 'memory',
+      HOST: '0.0.0.0',
+      GIT_COMMIT: 'abc1234',
+    });
+    expect([c.host, c.gitCommit]).toEqual(['0.0.0.0', 'abc1234']);
+    expect(() => loadConfig({ ...base, DATA_SOURCE: 'memory', HOST: '' })).toThrow(/HOST/);
+    expect(() => loadConfig({ ...base, DATA_SOURCE: 'memory', GIT_COMMIT: '' })).toThrow(
+      /GIT_COMMIT/,
+    );
+  });
+
+  it('reports every invalid variable, separated, with a hint', () => {
+    expect(() =>
+      loadConfig({ ...base, DATA_SOURCE: 'memory', WEBHOOK_SECRET: 'x', PORT: 'y' }),
+    ).toThrow(/PORT: .+; WEBHOOK_SECRET: WEBHOOK_SECRET must be at least 16 chars/);
+  });
+
   it('parses numbers and booleans from strings', () => {
     const c = loadConfig({ ...base, DATA_SOURCE: 'memory', PORT: '8080', DEBUG_HEADERS: 'true' });
     expect(c.port).toBe(8080);
