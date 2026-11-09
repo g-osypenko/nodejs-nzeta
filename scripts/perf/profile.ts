@@ -97,7 +97,7 @@ async function main(): Promise<void> {
   for (const p of points) {
     rmSync(profDir, { recursive: true, force: true });
     mkdirSync(profDir, { recursive: true });
-    startApp('--cpu-prof --cpu-prof-dir=/profiles');
+    await startApp('--cpu-prof --cpu-prof-dir=/profiles');
     version = (await getJson<{ commit: string }>('/version')).commit;
     const tokens = await Promise.all(
       Array.from({ length: 50 }, (_, i) => login(`seed-${i + 1}@lch.local`, SEED_PASSWORD)),
@@ -132,7 +132,7 @@ async function main(): Promise<void> {
       ].join('\n'),
     );
   }
-  startApp(); // leave the stand in its normal state
+  await startApp(); // leave the stand in its normal state
   const md = [
     `# CPU-профіль: ${label}`,
     '',

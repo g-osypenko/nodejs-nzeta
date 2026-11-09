@@ -157,7 +157,7 @@ async function main(): Promise<void> {
   const version = codeVersion();
   if (o.build) buildImage(version);
   prepareData();
-  startApp();
+  await startApp();
   const served = await getJson<{ commit: string }>('/version');
   log(`app up, /version → ${served.commit}`);
 

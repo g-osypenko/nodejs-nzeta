@@ -72,8 +72,20 @@ export function prepareData(): void {
   log(out);
 }
 
-export function startApp(nodeOptions = ''): void {
+export async function startApp(nodeOptions = ''): Promise<void> {
   compose(['up', '-d', '--wait', '--force-recreate', 'app'], { APP_NODE_OPTIONS: nodeOptions });
+  // "healthy" is checked inside the container; the host port mapping may lag behind a recreate.
+  const deadline = Date.now() + 30_000;
+  for (;;) {
+    try {
+      const res = await fetch(`${APP_URL}/version`);
+      if (res.ok) return;
+    } catch {
+      // connection refused / reset while the port proxy comes up
+    }
+    if (Date.now() > deadline) throw new Error(`app did not answer on ${APP_URL} within 30 s`);
+    await new Promise((r) => setTimeout(r, 500));
+  }
 }
 
 export function stopApp(): void {
