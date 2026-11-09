@@ -1,48 +1,34 @@
-# DEFENSE — Завдання 3: unit, інтеграційні, E2E і мутаційне тестування
+# DEFENSE — Завдання 4: CI, що блокує мердж, і CD на стейдж
 
-**Студент:** Осипенко Г. · **PR:** `feature/lab3-testing → main` (stacked на PR #2) · Попередні захисти — [`docs/defense/`](docs/defense/)
+**Студент:** Осипенко Г. · **PR:** [#4](https://github.com/g-osypenko/nodejs-nzeta/pull/4) `feature/lab4-ci-cd → main` · Попередні захисти — [`docs/defense/`](docs/defense/)
 
-**1. Що я просив у AI.** Покрити тестами всі рівні за критеріями [`spec.md`](spec.md) §6:
+**1. Що я просив у AI.** За [`spec.md`](spec.md) §8 зібрати CI, який блокує мердж, і CD на стейдж з міграціями без простою. Стейдж — Render + Neon, без оренди VPS: це моє рішення, варіанти в [`ai/lab4/01-kickoff.md`](ai/lab4/01-kickoff.md). Промпти — [`ai/lab4/`](ai/lab4/), рев'ю — [`review.md`](ai/lab4/review.md).
 
-- unit;
-- integration на справжньому Postgres;
-- E2E на зібраному процесі;
-- мутаційне тестування з класифікацією вижилих мутантів.
+**2. Топ-3 розбіжності** (кожна виправлена у вході — `AGENTS.md`):
 
-Промпти — [`ai/lab3/`](ai/lab3/), рев'ю — [`ai/lab3/review.md`](ai/lab3/review.md).
-
-**2. Топ-3: де «зелене» не означало «правильне»** (кожне виправлено спершу у вході — `AGENTS.md` / spec):
-
-| #   | Що було не так                                                                                                                                                                               | Мій слід                                           | Виправлення                                                                                                                                     |
-| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Stryker показав **24 %**, але жоден тест на мутантах не запускався (`testsCompleted: 0`): раннер старший за Vitest 5. Метрика була хибною.                                                   | `review.md` §1 · правило в `AGENTS.md`             | [`99e289b`](https://github.com/g-osypenko/nodejs-nzeta/commit/99e289b): Vitest 4.1.12 → реальні 77,6 %                                          |
-| 2   | `loader` мав **100 % покриття**, але мутант `hwid === null → true` вижив: зайвий `UPDATE` + `SELECT` на кожен handshake (SLA-шлях) тести не помічали. Так само логер без `mixin` і `config`. | [mutation-report](docs/testing/mutation-report.md) | [`9597d29`](https://github.com/g-osypenko/nodejs-nzeta/commit/9597d29): тест рахує звернення до репозиторію; тест реального логера → **80,7 %** |
-| 3   | Тести знайшли баги Лаби 2: синхронний `throw` у сервісах (роути це ховали) і детектор N+1, що рахував службовий запит драйвера.                                                              | `review.md` §3                                     | [`240159d`](https://github.com/g-osypenko/nodejs-nzeta/commit/240159d), [`787110e`](https://github.com/g-osypenko/nodejs-nzeta/commit/787110e)  |
+| #   | Що було не так (проти spec / `AGENTS.md`)                                                                                          | Мій слід                                                                                    | Виправлення                                                                                                                                                                |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | CLI seed у `shared/` імпортував `modules/auth`: межі шарів (§3)                                                                    | `review.md` §1                                                                              | [`a07b2c4`](https://github.com/g-osypenko/nodejs-nzeta/commit/a07b2c4) → `src/seed.ts`; правило [`40809a1`](https://github.com/g-osypenko/nodejs-nzeta/commit/40809a1)     |
+| 2   | SHA GitHub Action узято з пам'яті, не з реєстру: закріплення за SHA втрачає сенс                                                   | `review.md` §2                                                                              | [`4f759eb`](https://github.com/g-osypenko/nodejs-nzeta/commit/4f759eb); правило [`40809a1`](https://github.com/g-osypenko/nodejs-nzeta/commit/40809a1)                     |
+| 3   | Перший справжній прогін CI — червоний: флакі тест Лаби 3 (±50 мс за справжнім годинником) і `curl \| jq` без `pipefail` у кроці CI | [run](https://github.com/g-osypenko/nodejs-nzeta/actions/runs/42586051439) · `review.md` §3 | [`e2d15a8`](https://github.com/g-osypenko/nodejs-nzeta/commit/e2d15a8), [`9976c42`](https://github.com/g-osypenko/nodejs-nzeta/commit/9976c42) (pipefail на весь workflow) |
 
 **3. Ключові рішення.**
 
-- **Рівні — проєкти Vitest.** Unit на in-memory репозиторіях працює без Docker, тому стоїть у pre-push. Integration і E2E — **свіжий Postgres у Testcontainers на кожен прогін**, а не dev-БД.
-- **Один HTTP-контракт** ([`api-contract.ts`](test/support/api-contract.ts), 21 сценарій) проганяється і на memory, і на Postgres. Це виконуваний критерій §4.1 «однакова поведінка».
-- **Stryker на unit-наборі:** < 1 с на мутанта, детерміновано. SQL-шар перевіряє інтеграція, зокрема гонки: 10–20 паралельних запитів на одну сутність.
+- **Деплоїться перевірений артефакт.** Job `docker` збирає образ один раз, перевіряє `/version` у контейнері й публікує `ghcr.io/…:<sha>`. Render отримує саме цей тег через deploy hook, а не збирає ще раз ([ADR 0006](docs/adr/0006-ci-cd-github-actions-render-neon.md)).
+- **Міграції — 3 фази, 3 кроки CD, до перемикання трафіку.** `schema` з `lock_timeout` і повторами; `data` пакетами в окремих транзакціях; `indexes` — `CONCURRENTLY` з прибиранням `INVALID`. Застосунок на старті не мігрує ([ADR 0007](docs/adr/0007-zero-downtime-migrations.md)).
+- **Blue-green** — zero-downtime deploy Render за health check `/health`. `wait-for-version.sh` падає, якщо під час перемикання була хоч одна не-200 відповідь.
 
-**4. Ефективність тестів.**
+**4. Перевірка.**
 
-| Рівень      | Тестів | Що доводить                                                                                                                                                         |
-| ----------- | -----: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| unit        |    173 | правила доступу, ідемпотентність, межі (`expiresAt == now`), ретраї без реального очікування                                                                        |
-| integration |     40 | одна транзакція під конкуренцією; N+1 = 1 запит на сторінку; 503 + `Retry-After`; відновлення пулу після обриву з'єднань                                            |
-| e2e         |      5 | зібраний процес: шлях покупця від реєстрації до handshake; один `processId` у справжніх логах двох запитів; `exit 1` при недоступній БД                             |
-| покриття    |      — | 98,5 % інструкцій, 93,2 % гілок; **`loader` — 100 %** (пороги в конфігурації)                                                                                       |
-| мутації     |      — | **80,7 %**; 43 вижилі: 40 прийнятних (тексти логів і повідомлень — контракт = коди), 2 еквівалентні, 1 прийнятний — [класифікація](docs/testing/mutation-report.md) |
-
-Трасування критеріїв §4 → тести — [`docs/testing/report.md`](docs/testing/report.md).
-
-**5. Перевірка** (відтворювано; integration/e2e потребують Docker):
+| Що                                | Доказ                                                                                                                                                                     |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CI зелений на чистому PR          | [run 42586442587](https://github.com/g-osypenko/nodejs-nzeta/actions/runs/42586442587): `check` · `build` · `test` · `commits` · `docker`                                 |
+| CI блокує брудний PR (критерій 1) | [PR #5](https://github.com/g-osypenko/nodejs-nzeta/pull/5): безпековий баг HWID, не-conventional коміти, Prettier/ESLint/типи → червоні checks, мердж заблоковано         |
+| Branch protection                 | 5 required checks, strict, PR обов'язковий, без force-push                                                                                                                |
+| Фази міграцій (критерій 4)        | `npm run test:integration` → [`migrations.test.ts`](test/integration/migrations.test.ts): 4 пакети = 4 транзакції; `INVALID`-індекс перебудовано; `55P03` під блокуванням |
+| CD + `/version` (критерії 2–3)    | **TODO після налаштування стейджу:** посилання на run `deploy (staging)` · `GET https://<стейдж>/version` → `<sha мердж-коміта>`                                          |
 
 ```bash
-npm test                    # 173 passed (< 1 с)
-npm run test:integration    # 40 passed — Testcontainers Postgres 17
-npm run test:e2e            # build + 5 passed
-npm run test:coverage       # пороги spec §6.1 виконані
-npm run test:mutation       # make mutation → score 80.72 ≥ break 80
+make ci            # те саме, що required checks (потрібен Docker)
+make docker && make docker-run   # → http://127.0.0.1:3999/version = поточний SHA
 ```
