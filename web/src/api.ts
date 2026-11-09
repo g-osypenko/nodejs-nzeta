@@ -122,6 +122,7 @@ export function describeError(error: unknown): string {
     VALIDATION_ERROR: 'Перевірте поля: email і пароль щонайменше 8 символів.',
     UNAUTHENTICATED: 'Сесія завершилась — увійдіть знову.',
     DB_UNAVAILABLE: 'Сервіс тимчасово недоступний. Спробуйте за хвилину.',
+    AUTH_BUSY: 'Забагато входів одночасно. Спробуйте ще раз за секунду.',
     NOT_FOUND: 'Не знайдено.',
   };
   return known[error.code] ?? error.message;

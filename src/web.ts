@@ -25,6 +25,8 @@ export function registerWeb(app: App, dir: string): void {
     // One route per file found at startup: unknown paths fall through to the not-found handler.
     wildcard: false,
     cacheControl: false,
+    // web/scripts/compress.mjs writes .br/.gz next to each asset at build time (Lighthouse finding).
+    preCompressed: true,
     setHeaders: (reply, path) => {
       void reply.header(
         'cache-control',

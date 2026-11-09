@@ -1,5 +1,6 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import { brotliCompressSync, brotliDecompressSync } from 'node:zlib';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createTestApp, type TestApp } from '../support/app.js';
@@ -15,6 +16,11 @@ beforeAll(async () => {
   await mkdir(join(dist, 'assets'));
   await writeFile(join(dist, 'index.html'), '<!doctype html><div id="root"></div>');
   await writeFile(join(dist, 'assets', 'index-AbC123.js'), 'console.log(1)');
+  // what web/scripts/compress.mjs writes at build time
+  await writeFile(
+    join(dist, 'assets', 'index-AbC123.js.br'),
+    brotliCompressSync(Buffer.from('console.log(1)')),
+  );
   await writeFile(join(dist, 'favicon.svg'), '<svg/>');
   t = await createTestApp({ WEB_DIST_DIR: dist });
 });
@@ -33,6 +39,23 @@ describe('frontend served by Fastify on the same origin', () => {
     const icon = await t.app.inject({ method: 'GET', url: '/favicon.svg' });
     expect(icon.statusCode).toBe(200);
     expect(icon.headers['cache-control']).toBe('no-cache');
+  });
+
+  it('pre-compressed assets are served by Accept-Encoding, plain file otherwise', async () => {
+    const br = await t.app.inject({
+      method: 'GET',
+      url: '/assets/index-AbC123.js',
+      headers: { 'accept-encoding': 'br, gzip' },
+    });
+    expect(br.statusCode).toBe(200);
+    expect(br.headers['content-encoding']).toBe('br');
+    expect(String(br.headers['vary']).toLowerCase()).toContain('accept-encoding');
+    expect(br.headers['cache-control']).toBe('public, max-age=31536000, immutable');
+    expect(brotliDecompressSync(br.rawPayload).toString()).toBe('console.log(1)');
+
+    const plain = await t.app.inject({ method: 'GET', url: '/assets/index-AbC123.js' });
+    expect(plain.headers['content-encoding']).toBeUndefined();
+    expect(plain.body).toBe('console.log(1)');
   });
 
   it('browser navigation to / or a client-side route gets index.html (reload works)', async () => {

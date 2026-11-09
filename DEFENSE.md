@@ -1,34 +1,47 @@
-# DEFENSE — Завдання 4: CI, що блокує мердж, і CD на стейдж
+# DEFENSE — Завдання 5: боттлнеки за даними живої системи → виніс модуля в бібліотеку з DI
 
-**Студент:** Осипенко Г. · **PR:** [#4](https://github.com/g-osypenko/nodejs-nzeta/pull/4) `feature/lab4-ci-cd → main` · Попередні захисти — [`docs/defense/`](docs/defense/)
+**Студент:** Осипенко Г. · **PR:** `feature/lab5-perf` (stacked на `product/web` ← PR #4) · Попередні захисти — [`docs/defense/`](docs/defense/)
 
-**1. Що я просив у AI.** За [`spec.md`](spec.md) §8 зібрати CI, який блокує мердж, і CD на стейдж з міграціями без простою. Стейдж — Render + Neon, без оренди VPS: це моє рішення, варіанти в [`ai/lab4/01-kickoff.md`](ai/lab4/01-kickoff.md). Промпти — [`ai/lab4/`](ai/lab4/), рев'ю — [`review.md`](ai/lab4/review.md).
+**1. Що я просив у AI.** За [`spec.md`](spec.md) §9:
 
-**2. Топ-3 розбіжності** (кожна виправлена у вході — `AGENTS.md`):
+- наповнити систему даними (200 000 ліцензій);
+- зняти базову лінію p50/p95/p99 з повторами, CPU проти очікування, RAM, EXPLAIN і Lighthouse;
+- за цифрами знайти найвразливіший модуль і винести його в бібліотеку з DI.
 
-| #   | Що було не так (проти spec / `AGENTS.md`)                                                                                          | Мій слід                                                                                    | Виправлення                                                                                                                                                                |
-| --- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | CLI seed у `shared/` імпортував `modules/auth`: межі шарів (§3)                                                                    | `review.md` §1                                                                              | [`a07b2c4`](https://github.com/g-osypenko/nodejs-nzeta/commit/a07b2c4) → `src/seed.ts`; правило [`40809a1`](https://github.com/g-osypenko/nodejs-nzeta/commit/40809a1)     |
-| 2   | SHA GitHub Action узято з пам'яті, не з реєстру: закріплення за SHA втрачає сенс                                                   | `review.md` §2                                                                              | [`4f759eb`](https://github.com/g-osypenko/nodejs-nzeta/commit/4f759eb); правило [`40809a1`](https://github.com/g-osypenko/nodejs-nzeta/commit/40809a1)                     |
-| 3   | Перший справжній прогін CI — червоний: флакі тест Лаби 3 (±50 мс за справжнім годинником) і `curl \| jq` без `pipefail` у кроці CI | [run](https://github.com/g-osypenko/nodejs-nzeta/actions/runs/42586051439) · `review.md` §3 | [`e2d15a8`](https://github.com/g-osypenko/nodejs-nzeta/commit/e2d15a8), [`9976c42`](https://github.com/g-osypenko/nodejs-nzeta/commit/9976c42) (pipefail на весь workflow) |
+Рішення ухвалював я: захист — admission control, межа бібліотеки — ядро auth, SLA ([`ai/lab5/02-findings.md`](ai/lab5/02-findings.md)). Промпти — [`ai/lab5/`](ai/lab5/), рев'ю — [`review.md`](ai/lab5/review.md).
 
-**3. Ключові рішення.**
+**2. Топ-3 розбіжності** (виправлені у вході — `AGENTS.md` / spec):
 
-- **Деплоїться перевірений артефакт.** Job `docker` збирає образ один раз, перевіряє `/version` у контейнері й публікує `ghcr.io/…:<sha>`. Render отримує саме цей тег через deploy hook, а не збирає ще раз ([ADR 0006](docs/adr/0006-ci-cd-github-actions-render-neon.md)).
-- **Міграції — 3 фази, 3 кроки CD, до перемикання трафіку.** `schema` з `lock_timeout` і повторами; `data` пакетами в окремих транзакціях; `indexes` — `CONCURRENTLY` з прибиранням `INVALID`. Застосунок на старті не мігрує ([ADR 0007](docs/adr/0007-zero-downtime-migrations.md)).
-- **Blue-green** — zero-downtime deploy Render за health check `/health`. `wait-for-version.sh` падає, якщо під час перемикання була хоч одна не-200 відповідь.
+| #   | Що було не так                                                                                                                                | Мій слід       | Виправлення                                                                                                                                                                 |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Інструмент вимірів брехав: RPS скрізь −10 %, «затримка event loop» = роздільність таймера 10,8 мс                                             | `review.md` §1 | [`a2a0d6b`](https://github.com/g-osypenko/nodejs-nzeta/commit/a2a0d6b); правило контрольного прогону [`00638fe`](https://github.com/g-osypenko/nodejs-nzeta/commit/00638fe) |
+| 2   | Профіль показав main thread зайнятим на 1,5 % при ELU 30 % — дві метрики одного явища суперечили; Stryker дав 0 % у пакеті зі 100 % покриттям | `review.md` §2 | [`895cd2d`](https://github.com/g-osypenko/nodejs-nzeta/commit/895cd2d), [`6d8184e`](https://github.com/g-osypenko/nodejs-nzeta/commit/6d8184e)                              |
+| 3   | Прогнози без цифр: кеш для `loader` (план spec §7) і lazy-маршрути від агента. Цифри: запас ×7 і 6 КБ із 323 КБ — обидва відкинуто            | `review.md` §3 | spec §7 + правило «оптимізація лише за числом» [`00638fe`](https://github.com/g-osypenko/nodejs-nzeta/commit/00638fe)                                                       |
 
-**4. Перевірка.**
+**3. Ключове рішення: найвразливіший модуль — `auth`** ([ADR 0010](docs/adr/0010-extract-auth-core-library.md)).
 
-| Що                                | Доказ                                                                                                                                                                                                                                                                                                               |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| CI зелений на чистому PR          | [run 42586442587](https://github.com/g-osypenko/nodejs-nzeta/actions/runs/42586442587): `check` · `build` · `test` · `commits` · `docker`                                                                                                                                                                           |
-| CI блокує брудний PR (критерій 1) | [PR #5](https://github.com/g-osypenko/nodejs-nzeta/pull/5), коміти через API без хуків: баг HWID → `test` ✖ (12 тестів) і `build` ✖ (smoke); не-conventional → `commits` ✖; `any` → `check` ✖; `TS2322` → `docker` ✖ — [run](https://github.com/g-osypenko/nodejs-nzeta/actions/runs/42586798834), стан **BLOCKED** |
-| Branch protection                 | 5 required checks, strict, PR обов'язковий, без force-push                                                                                                                                                                                                                                                          |
-| Фази міграцій (критерій 4)        | `npm run test:integration` → [`migrations.test.ts`](test/integration/migrations.test.ts): 4 пакети = 4 транзакції; `INVALID`-індекс перебудовано; `55P03` під блокуванням                                                                                                                                           |
-| CD + `/version` (критерії 2–3)    | **TODO після налаштування стейджу:** посилання на run `deploy (staging)` · `GET https://<стейдж>/version` → `<sha мердж-коміта>`                                                                                                                                                                                    |
+- **Чому auth.** Login коштує 23 мс CPU (×45 від handshake). Насичення настає між 40 і 80 RPS, і це обвал (p99 25 мс → 7,1 с), а не плавна деградація. Шквал 60 логінів/с ламає SLA найгарячішого `loader`: p99 1,6 → 86 мс.
+- **Чому не БД.** Гарячі запити — 0,04 мс за індексом (EXPLAIN).
+- **Альтернативи.** Rate limit (не обмежує CPU при розподіленому шквалі), окремий сервіс (друга інфраструктура), слабший scrypt (неприйнятно).
+- **`@lch/auth-core`:**
+  - типізований контракт;
+  - усі ресурси (сховище, KDF, годинник, токени, поточний користувач, логер) — одним об'єктом `AuthDeps`;
+  - хешувальник з обмеженою конкурентністю й чергою → `503 AUTH_BUSY`;
+  - пакет не імпортує `src/`, `postgres`, `fastify`, `node:*`, і це перевіряє лінт.
+
+**4. Перевірка** (до `27b5c46` → після `51efdf2`, медіана 5 повторів, [`docs/perf/README.md`](docs/perf/README.md)):
+
+| Що                                         | До          | Після                                        |
+| ------------------------------------------ | ----------- | -------------------------------------------- |
+| `storm`: handshake p99 (SLA ≤ 50 мс)       | 85,9 мс     | **34,9 мс**                                  |
+| `storm`: login p99 / dropped               | 6,4 с / 544 | **287 мс / 0** (≈ 45 % логінів — швидке 503) |
+| login 80 RPS p99                           | 7,1 с       | 269 мс                                       |
+| Lighthouse `/` (mobile): Performance / LCP | 92 / 2,7 с  | **100 / 1,7 с** (324 → 90 КБ, brotli)        |
+| Тести: unit + integration / e2e / мутації  | —           | 246 / 5 / **80,9 %** (`auth-core` 100 %)     |
 
 ```bash
-make ci            # те саме, що required checks (потрібен Docker)
-make docker && make docker-run   # → http://127.0.0.1:3999/version = поточний SHA
+make load LABEL=after && make profile LABEL=after && make explain LABEL=after && make lighthouse LABEL=after
+# у кожному звіті — SHA з GET /version
 ```
+
+Чесно про межі. На 1 vCPU потік scrypt і event loop ділять ядро: handshake p95 під storm 28 мс (без storm — 0,8 мс). OFFSET-пагінацію адмінки знайдено (53 мс на глибині 200 000), але свідомо не виправлено: вона змінює контракт API. На хості паралельно працював стек CVAT — розкид видно в min–max.
