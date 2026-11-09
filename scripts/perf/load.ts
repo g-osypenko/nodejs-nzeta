@@ -37,7 +37,8 @@ interface Options {
   sweep: boolean;
 }
 
-const DEFAULT_SCENARIOS = 'handshake:200,cabinet:100,login:20,plans:200,admin:20,mixed:200';
+const DEFAULT_SCENARIOS =
+  'handshake:200,cabinet:100,login:20,plans:200,admin:20,mixed:200,storm:400+60';
 
 function arg(name: string): string | undefined {
   return process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
