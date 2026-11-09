@@ -37,9 +37,13 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            web/package-lock.json
       - run: npm ci
-      - name: style (prettier) · lint (eslint) · types (tsc)
-        run: npm run check
+      - run: npm run web:install # type-aware ESLint of web/ needs its dependencies
+      - name: style (prettier) · lint (eslint) · types (tsc) — backend and web
+        run: npm run check && npm run web:typecheck
 
   build:
     name: build
@@ -51,10 +55,15 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            web/package-lock.json
       - run: npm ci
       - run: npm run build
       - name: smoke — every endpoint of spec §1 (in-memory)
         run: npm run smoke
+      - name: web build (vite)
+        run: npm run web:install && npm run web:build
 
   test:
     name: test
@@ -135,6 +144,9 @@ jobs:
           echo "/version → $got"
           test "$got" = "$GITHUB_SHA"
           curl -fsS http://127.0.0.1:3000/api/v1/plans | jq -e 'length == 3'
+          # same-origin frontend: a client-side route returns the SPA shell
+          shell=$(curl -fsS -H 'accept: text/html' http://127.0.0.1:3000/licenses)
+          grep -q 'id="root"' <<<"$shell" # not `curl | grep -q`: early exit → SIGPIPE under pipefail
       - name: log in to GHCR
         if: github.event_name != 'pull_request'
         uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
