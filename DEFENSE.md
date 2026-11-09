@@ -1,92 +1,47 @@
-# DEFENSE: Лабораторна робота №1
+# DEFENSE — Завдання 2: сценарії на статиці → PostgreSQL, композиція, помилки
 
-**Студент:** Осипенко Г.  
-**Тема:** Фундамент і структура застосунку  
-**Проєкт:** License & Config Hub (Backend & Gateway для десктопного ПЗ комп'ютерного зору)  
-**Pull Request:** `feature/scaffolding` $\rightarrow$ `main`
+**Студент:** Осипенко Г. · **PR:** `feature/lab2-data-layer → main` · Захист Лаби 1 — [`docs/defense/lab1.md`](docs/defense/lab1.md)
 
----
+**1. Що я просив у AI.** Спершу — проаналізувати стан репозиторію після Лаби 1 і навести лад. Потім — реалізувати всі сценарії [`spec.md`](spec.md) через HTTP API: спочатку на статичних даних, далі на PostgreSQL, за критеріями §4. Промпти й відповіді — [`ai/lab2/`](ai/lab2/), рев'ю виходу — [`ai/lab2/review.md`](ai/lab2/review.md).
 
-## 1. Що і навіщо
+**2. Топ-3 розбіжності spec ↔ вихід AI** (кожна виправлена спершу у вході — spec / AGENTS.md):
 
-- **Що:** Закладено архітектурний каркас модульного моноліту (вітрина і онлайн-продаж ліцензій, адміністрування ключів, хмарні конфігурації, шлюз авторизації лоадера) на Fastify та TypeScript Strict, розроблено власні інженерні стандарти (DoD, MADR, spec-template) та налаштовано нерозривний конвеєр Git-хуків (Husky, lint-staged).
-- **Навіщо:** Забезпечити абсолютну надійність шлюзу авторизації клієнтського лоадера та процесу продажу ліцензій, виключити потрапляння нетипізованого або невідформатованого коду в репозиторій та підготувати ґрунт під навантажувальне тестування.
+| #   | Що було не так (пункт spec)                                                                                                                       | Мій слід                                                   | Виправлення                                                                                                                              |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | **N+1** в адмін-реєстрі (§4.8): сервіс брав email власника окремим запитом на кожен рядок. На статиці це непомітно, на БД — 9 запитів на 8 рядків | `review.md` §1 · правило в `AGENTS.md`                     | [`afab07d`](https://github.com/g-osypenko/nodejs-nzeta/commit/afab07d): read-model + `LEFT JOIN`, **2 запити** на сторінку з 20 рядків   |
+| 2   | Видача ліцензії неіснуючому `userId`: memory → `201`, Postgres → `500` (§4.1, §3)                                                                 | `review.md` §2 · новий критерій §4.10 (`3d5d924`)          | [`ab41ee9`](https://github.com/g-osypenko/nodejs-nzeta/commit/ab41ee9): `404` на обох джерелах, перевірка в транзакції з `FOR KEY SHARE` |
+| 3   | Клієнт отримував внутрішній `FST_ERR_CTP_BODY_TOO_LARGE` (§3)                                                                                     | `review.md` §3 · правило «лише коди з таблиці» (`3d5d924`) | [`ab41ee9`](https://github.com/g-osypenko/nodejs-nzeta/commit/ab41ee9): мапінг у глобальному обробнику → `413 PAYLOAD_TOO_LARGE`         |
 
----
+**3. Ключові рішення.**
 
-## 2. Топ-3 розбіжності / «зрізані кути» (проти spec)
+- **БД і доступ — [ADR 0004](docs/adr/0004-postgres-with-sql-tagged-templates.md).** PostgreSQL + `postgres` (SQL tagged templates), без ORM: `ON CONFLICT`, `FOR UPDATE` і умовний `UPDATE` пишуться напряму, а кількість запитів видно. Розглядалися Drizzle, Kysely, Prisma, `pg`.
+- **Композиція — [ADR 0005](docs/adr/0005-composition-root-and-async-local-storage.md).** Ручний composition root ([`container.ts`](src/container.ts)) і AsyncLocalStorage для `requestId` / `processId` / `user`. Pino `mixin` додає їх у кожен лог. Розглядалися awilix, Effect, явне протягування `ctx`. Перехід зі статики на БД (`dafc25c`) не змінив жодного роуту чи сервісу.
+- **Business-process ID.** Зберігається в `orders.process_id`; вебхук оплати приєднується до процесу замовлення, тож увесь checkout видно в логах під одним ID.
 
-| №     | Зрізаний кут / Розбіжність                                                                                                                                                      | Причина компромісу                                                                                                                               | Коміт фіксації                                                         |
-| :---- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | :----------------------------------------------------------------------------------------------------------------------------------------------- | :--------------------------------------------------------------------- |
-| **1** | **Відсутність фізичного підключення до БД (PostgreSQL / Drizzle):** У `spec.md` описано сутності `USERS`, `LICENSES`, `USER_CONFIGS`, проте шар БД у коді ще не піднято.        | Лабораторна 1 фокусується виключно на конвеєрі якості, хуках та структурі. Підключення Drizzle ORM та міграції свідомо винесено в Лабораторну 2. | [`39a7635`](https://github.com/g-osypenko/nodejs-nzeta/commit/39a7635) |
-| **2** | **Stateless-отримання коміту в `/version` через `process.env`:** Замість виконання синхронного `git rev-parse HEAD` у рантаймі використовується `GIT_COMMIT ?? 'dev-local'`.    | Уникнення блокування Event Loop процесом `child_process.execSync` та запобігання падінню сервісу в контейнерах, де `.git` відсутній.             | [`a319dca`](https://github.com/g-osypenko/nodejs-nzeta/commit/a319dca) |
-| **3** | **Відсутність фізичних файлів контролерів у `src/modules/*`:** Межі модулів (`auth`, `licenses`, `configs`, `loader`) зафіксовані в архітектурі, але ще не мають бізнес-файлів. | Уникнення створення порожніх заглушок (dummy files) до повноцінного проєктування контрактів даних у Лабораторній 2.                              | [`39a7635`](https://github.com/g-osypenko/nodejs-nzeta/commit/39a7635) |
+**4. Аудит даних.**
 
----
+- **Ідемпотентність:**
+  - `POST /orders` — `UNIQUE(user_id, idempotency_key)`;
+  - вебхук — `event_id` як PK і одна транзакція з блокуванням замовлення;
+  - handshake — один compare-and-set `UPDATE … WHERE hwid IS NULL` (два одночасні handshake → рівно один `BOUND`).
+  - Лише такі операції ретраяться (`withRetry`) на `40001`/`40P01`/обриві з'єднання.
+- **Збої джерела** (перевірено вручну, команди в README):
+  - старт без БД → `exit 1` за ~0,7 с з причиною;
+  - БД зупинено під час роботи → `503 DB_UNAVAILABLE` + `Retry-After`;
+  - БД піднято → `200` без перезапуску процесу.
+- **Зрізані кути / крайові випадки:**
+  1. Вебхук `SUCCEEDED` після `FAILED` для того самого замовлення → `409`. Гроші можуть бути списані без ліцензії, потрібна ручна звірка.
+  2. Адмінська видача ліцензії не ретраїться: вона не ідемпотентна, і при обриві після `COMMIT` результат невідомий.
+  3. Прострочені сесії не чистяться.
 
-## 3. Ключове архітектурне рішення (ADR)
+  Також поза обсягом (spec §5): HMAC-підпис вебхука, JWT, rate limiting.
 
-- **Рішення:** Вибір **Fastify** замість Express.js та NestJS ([ADR 0002](standards/adr/0002-choose-fastify-over-express.md)).
-  - _Альтернативи:_ Express.js (відхилено через низьку пропускну здатність та відсутність вбудованої компіляції схем), NestJS (відхилено через оверхед рефлексії/декораторів та складнощі профілювання низькорівневих ботлнеків у Лабораторній 5).
-  - _Чому Fastify:_ Компіляція схем валідації (`fast-json-stringify` / `Ajv`), мінімальний оверхед для високочастотного шлюзу `loader` (SLA < 15ms) та нативна плагінна інкапсуляція.
-- **Розподіл модулів:** Ізоляція `loader` від `licenses` ([ADR 0003](standards/adr/0003-modular-monolith-boundary.md)) для захисту критичного шляху перевірки від навантаження адмін-панелі.
-
----
-
-## 4. Перевірка системи та артефакти запуску
-
-### Команди відтворення:
+**5. Перевірка** (відтворювано):
 
 ```bash
-npm run smoke          # Результат: "Smoke test passed: server instantiates without errors."
-npm run typecheck      # Результат: tsc --noEmit (0 помилок, strict mode)
-npm run lint           # Результат: eslint . (0 помилок, заборона any)
-npm run format:check   # Результат: All matched files use Prettier code style!
-```
-
-_(Або через `make all` / `make smoke`)_
-
-### Службовий ендпоінт перевірки версії:
-
-`GET /version` $\rightarrow$ `HTTP/1.1 200 OK`
-
-```json
-{
-  "status": "OK",
-  "commit": "a319dca"
-}
-```
-
----
-
-## 5. Доказ блокування «брудного» коміту Git-хуком
-
-При спробі закомітити код із порушенням правил типізації (`any`) хук `.husky/pre-commit` гарантовано відхиляє коміт:
-
-```text
-$ git commit -m "test: dirty commit"
-⋯ Backing up original state…
-✔ Done backing up original state (d91685c)!
-⋯ Running tasks for staged files…
-    *.ts — 1 file
-      ⋯ prettier --write
-      ⋯ eslint --fix
-
-✔ prettier --write
-✖ eslint --fix
-
-✖ Failed to run tasks for staged files!
-↓ Skipped staging changes from tasks…
-⋯ Reverting to original state because of errors…
-✔ Done reverting to original state!
-⋯ Cleaning up temporary files…
-✔ Done cleaning up temporary files!
-
-✖ eslint --fix:
-
-C:\UNI-reps\nodejs-nzeta\src\app.ts
-  20:27  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
-
-✖ 1 problem (1 error, 0 warnings)
-husky - pre-commit script failed (code 1)
+npm run check && npm run build          # lint + format + typecheck + tsc — 0 помилок
+npm run smoke                           # Smoke test passed: 45 checks on memory.
+npm run db:up && npm run db:migrate     # Postgres 17 на 127.0.0.1:55432
+npm run smoke:db                        # Smoke test passed: 46 checks on postgres.  (… 2 SQL queries for a page of 20 rows)
+GIT_COMMIT=$(git rev-parse --short HEAD) npm start   # GET /version → {"status":"OK","commit":"<sha>"}
 ```
