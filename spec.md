@@ -95,7 +95,7 @@ erDiagram
 | 404     | `NOT_FOUND`, `KEY_NOT_FOUND`, `ROUTE_NOT_FOUND`                    | немає ресурсу, зокрема користувача, якому видається ліцензія (чуже замовлення теж 404 — не розкриваємо) |
 | 409     | `EMAIL_TAKEN`, `IDEMPOTENCY_CONFLICT`, `ORDER_NOT_PAYABLE`         | дубль email; той самий ключ з іншим `planId`; вебхук на закрите замовлення                              |
 | 413/415 | `PAYLOAD_TOO_LARGE`, `UNSUPPORTED_MEDIA_TYPE`                      | тіло більше ліміту (конфіг > 64 KiB); непідтримуваний `Content-Type`                                    |
-| 503     | `DB_UNAVAILABLE`                                                   | БД недоступна під час запиту (+ `Retry-After`)                                                          |
+| 503     | `DB_UNAVAILABLE`, `AUTH_BUSY`                                      | БД недоступна (+ `Retry-After: 5`); черга хешування паролів повна (+ `Retry-After: 1`, Завдання 5)      |
 
 Клієнт бачить **лише** коди з цієї таблиці (+ `INTERNAL` 500): внутрішні коди фреймворку чи Postgres назовні не виходять.
 
@@ -189,7 +189,7 @@ Seed — окрема команда `npm run db:seed`, не міграція. *
 
 **Метод:** відкрита модель (k6 `constant-arrival-rate`, без coordinated omission). Прогрів 10 с → вимір 30 с → **5 повторів**. Звіт: p50 / p95 / p99, частка помилок, досягнутий RPS — медіана та розкид (min–max) між повторами. Сервер: CPU-час процесу / wall-час, ELU (event loop utilization), затримка event loop p99, RSS (`GET /debug/runtime`, лише з `DEBUG_RUNTIME=true`).
 
-**SLA (пропозиція агента, підтверджує студент):** `handshake` p99 ≤ 50 мс при 200 RPS; `login` p99 ≤ 500 мс при 20 RPS; помилок 5xx — 0.
+**SLA (запропонував агент, підтвердив студент 2026-11-09):** `handshake` p99 ≤ 50 мс при 200 RPS; `login` p99 ≤ 500 мс при 20 RPS; помилок 5xx — 0, крім свідомої відмови `503 AUTH_BUSY`. **Під шквалом логінів** (`storm`: 400 handshake/с + 60 login/с на 1 vCPU) `handshake` p99 ≤ 50 мс: один модуль не має права зламати SLA іншого; зайві логіни отримують швидке `503 AUTH_BUSY`, а не чергу на секунди.
 
 **Критерії прийняття:**
 

@@ -11,6 +11,7 @@ export default {
   coverageAnalysis: 'perTest',
   mutate: [
     'src/modules/**/*.service.ts',
+    'packages/auth-core/src/**/*.ts', // the extracted library (spec §9.4)
     'src/modules/loader/**/*.ts',
     '!src/modules/loader/loader.repository.postgres.ts', // SQL: covered by integration tests
     'src/shared/**/*.ts',
