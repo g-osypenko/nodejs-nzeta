@@ -86,6 +86,14 @@ src/
 - Тестувати підключення, а не лише функцію: якщо `X` використовує `f`, тест має йти через `X`.
 - Без `sleep` у логіці очікування: таймери підміняються (`vi.mock('node:timers/promises')`), час — через дані.
 - Метрика інструмента не приймається на віру: 0 % вбитих мутантів у файлі зі 100 % покриттям — спершу перевір `testsCompleted` у звіті Stryker.
+- Перевірка через системну статистику з відкладеним оновленням (`pg_stat_*`) — не доказ у тесті; лічильник робиться детермінованим (тригер, `dbQueries`).
+
+**CI/CD і міграції (Лаба 4, `spec.md` §8, ADR 0006–0007):**
+
+- Точки входу й CLI, що збирають модулі (`seed`, `smoke`, `index`), — у корені `src/`; `shared/` ніколи не імпортує `modules/`.
+- Версії та SHA зовнішніх дій і пакетів — **лише з реєстру** (`gh api repos/<o>/<r>/commits/<tag>`, `npm view <p> time`), ніколи з пам'яті; реліз ≥ 2 тижнів; GitHub Actions закріплюються за SHA з коментарем-тегом.
+- Схема змінюється лише expand-міграцією, сумісною з попередньою версією коду; дані — пакетний DML у `migrations/data/`; індекси — `CONCURRENTLY` у `migrations/indexes/`; seed — `npm run db:seed`. Застосунок на старті не мігрує.
+- Workflow перевіряється `actionlint` до пушу; required checks на `main`: `check`, `build`, `test`, `commits`, `docker`.
 
 ## 4. Мова та типізація
 
@@ -99,7 +107,7 @@ src/
 
 - Гілка на кожну лабу: `feature/labN-<topic>` → PR у `main` (merge commit, без squash/rebase). Історію після показу не переписувати.
 - Conventional Commits: `feat|fix|refactor|chore|docs|test(scope): ...`. Коміти, зроблені з AI, мають трейлер `Co-Authored-By`.
-- Хуки не обходити (`--no-verify` заборонено). Pre-commit: lint-staged + typecheck. Pre-push: build + smoke.
+- Хуки не обходити (`--no-verify` заборонено). Pre-commit: lint-staged + typecheck. Commit-msg: commitlint (заголовок ≤ 100 символів, тема з малої літери). Pre-push: build + smoke.
 - Перед звітом користувачу: `npm run check && npm run build && npm run smoke`.
 - Атомарні кроки, кожен з окремим комітом. Не робити великих сліпих генерацій.
 
