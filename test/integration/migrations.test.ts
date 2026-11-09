@@ -2,23 +2,14 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import postgres, { type Sql } from 'postgres';
-import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { runMigrations } from '../../src/shared/db/migrations.js';
+import { createScratchDb } from '../support/scratch-db.js';
 
 /**
  * Zero-downtime migration phases (spec.md §8, criterion 4). Each test gets its own empty database
  * in the run's Testcontainers Postgres and its own migrations directory with fixture files.
  */
-
-let admin: Sql;
-let seq = 0;
-
-beforeAll(() => {
-  admin = postgres(inject('databaseUrl'), { max: 1, onnotice: () => undefined });
-});
-afterAll(async () => {
-  await admin.end({ timeout: 5 });
-});
 
 interface Fixture {
   url: string;
@@ -29,27 +20,20 @@ interface Fixture {
 }
 
 async function fixture(): Promise<Fixture> {
-  seq += 1;
-  const name = `mig_${process.pid}_${seq}`;
-  await admin.unsafe(`CREATE DATABASE ${name}`);
-  const u = new URL(inject('databaseUrl'));
-  u.pathname = `/${name}`;
-  const url = u.toString();
+  const scratch = await createScratchDb('mig');
   const dir = await mkdtemp(join(tmpdir(), 'lch-mig-'));
-  const db = postgres(url, { max: 2, onnotice: () => undefined });
   return {
-    url,
+    url: scratch.url,
     dir,
-    db,
+    db: scratch.db,
     write: async (path, body): Promise<void> => {
       const full = join(dir, path);
       await mkdir(join(full, '..'), { recursive: true });
       await writeFile(full, body);
     },
     cleanup: async (): Promise<void> => {
-      await db.end({ timeout: 5 });
       await rm(dir, { recursive: true, force: true });
-      await admin.unsafe(`DROP DATABASE ${name} WITH (FORCE)`);
+      await scratch.drop();
     },
   };
 }

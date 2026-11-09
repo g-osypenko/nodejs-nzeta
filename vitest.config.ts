@@ -39,7 +39,7 @@ export default defineConfig({
       provider: 'v8',
       include: ['src/**/*.ts'],
       // Entry points and CLIs are exercised by smoke/e2e as processes, not in-process.
-      exclude: ['src/index.ts', 'src/smoke.ts', 'src/shared/db/migrate.ts'],
+      exclude: ['src/index.ts', 'src/smoke.ts', 'src/seed.ts', 'src/shared/db/migrate.ts'],
       reporter: ['text-summary', 'text', 'html', 'json-summary'],
       reportsDirectory: 'reports/coverage',
       thresholds: {
