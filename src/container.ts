@@ -4,7 +4,8 @@ import { createMemoryStore } from './shared/db/memory-store.js';
 import type { AuthRepository } from './modules/auth/auth.repository.js';
 import { createMemoryAuthRepository } from './modules/auth/auth.repository.memory.js';
 import { createPostgresAuthRepository } from './modules/auth/auth.repository.postgres.js';
-import { createAuthService, type AuthService } from './modules/auth/auth.service.js';
+import type { AuthService } from '@lch/auth-core';
+import { createAppAuth } from './modules/auth/auth.adapters.js';
 import type { ConfigsRepository } from './modules/configs/configs.repository.js';
 import { createMemoryConfigsRepository } from './modules/configs/configs.repository.memory.js';
 import { createPostgresConfigsRepository } from './modules/configs/configs.repository.postgres.js';
@@ -103,7 +104,11 @@ export async function createContainer(config: AppConfig): Promise<Container> {
   const { repos } = data;
 
   const services: Services = {
-    auth: createAuthService({ repo: repos.auth, sessionTtlHours: config.sessionTtlHours }),
+    auth: createAppAuth({
+      store: repos.auth,
+      sessionTtlHours: config.sessionTtlHours,
+      hashing: config.authHashing,
+    }).service,
     licenses: createLicensesService({
       repo: repos.licenses,
       webhookSecret: config.webhookSecret,

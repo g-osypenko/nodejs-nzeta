@@ -13,6 +13,7 @@ import fastify, {
 import type { Logger } from 'pino';
 import { ZodError } from 'zod';
 import type { Container } from './container.js';
+import { AuthError, toAppError } from './modules/auth/auth.adapters.js';
 import { authRoutes, createAuthHook } from './modules/auth/auth.routes.js';
 import { configsRoutes } from './modules/configs/configs.routes.js';
 import { licensesRoutes } from './modules/licenses/licenses.routes.js';
@@ -46,7 +47,9 @@ const FRAMEWORK_CODES: Record<number, string> = {
 };
 
 /** Translates any thrown value into an HTTP answer. The ONLY place where errors become responses. */
-function mapError(error: unknown): Mapped {
+function mapError(raw: unknown): Mapped {
+  // Errors of the auth library are translated to the codes of spec.md §3 here, in one place.
+  const error = raw instanceof AuthError ? toAppError(raw) : raw;
   if (error instanceof AppError) {
     return {
       status: error.statusCode,
@@ -151,7 +154,9 @@ export function buildApp(container: Container): App {
       requestId: ctx.requestId,
       processId: ctx.processId,
     };
-    if (mapped.status === 503) void reply.header('retry-after', '5');
+    // AUTH_BUSY: a hashing slot frees in tens of milliseconds; the DB may need longer.
+    if (mapped.status === 503)
+      void reply.header('retry-after', mapped.code === 'AUTH_BUSY' ? '1' : '5');
     return reply.status(mapped.status).send(body);
   });
 

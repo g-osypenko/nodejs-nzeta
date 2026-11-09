@@ -1,7 +1,7 @@
 import type { FastifyPluginAsync, FastifyRequest, onRequestHookHandler } from 'fastify';
 import { setCurrentUser } from '../../shared/context.js';
 import { CredentialsBody, toUserDto } from './auth.schemas.js';
-import type { AuthService } from './auth.service.js';
+import type { AuthService } from '@lch/auth-core';
 
 function bearerToken(request: FastifyRequest): string | null {
   const header = request.headers.authorization;
