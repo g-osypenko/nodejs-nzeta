@@ -1,6 +1,6 @@
-# Only package files, tsconfig, src/ and migrations/ are needed in the build context.
-node_modules
-dist
+# Only package files, tsconfig, src/, migrations/ and web/ sources are needed in the build context.
+**/node_modules
+**/dist
 reports
 .stryker-tmp
 .git

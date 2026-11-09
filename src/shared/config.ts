@@ -14,6 +14,7 @@ const EnvSchema = z
     SESSION_TTL_HOURS: z.coerce.number().int().positive().default(24),
     GIT_COMMIT: z.string().min(1).default('dev-local'),
     DEBUG_HEADERS: z.stringbool().default(false),
+    WEB_DIST_DIR: z.string().min(1).optional(),
   })
   .refine((env) => env.DATA_SOURCE === 'memory' || env.DATABASE_URL !== undefined, {
     message: 'DATABASE_URL is required when DATA_SOURCE=postgres',
@@ -33,6 +34,8 @@ export interface AppConfig {
   gitCommit: string;
   /** Adds x-db-queries to responses (dev/smoke only). */
   debugHeaders: boolean;
+  /** Built frontend (web/dist) served on the same origin; null = API only (ADR 0008). */
+  webDistDir: string | null;
 }
 
 /** Validates the environment once at startup; an invalid env fails the process immediately. */
@@ -55,5 +58,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     sessionTtlHours: e.SESSION_TTL_HOURS,
     gitCommit: e.GIT_COMMIT,
     debugHeaders: e.DEBUG_HEADERS,
+    webDistDir: e.WEB_DIST_DIR ?? null,
   };
 }

@@ -53,6 +53,9 @@ npm run db:up && npm run db:migrate
 npm run dev
 
 # без БД: у .env поставте DATA_SOURCE=memory (статичні дані в пам'яті)
+
+# фронтенд (React + Vite, ADR 0008) — у другому терміналі → http://localhost:5173
+npm run web:install && npm run web:dev
 ```
 
 Адмін створюється на старті з `ADMIN_EMAIL` / `ADMIN_PASSWORD`. За замовчуванням сервер слухає `127.0.0.1:3000`; у контейнері задайте `HOST=0.0.0.0`.
@@ -117,4 +120,5 @@ make docker-run  # запустити його (in-memory) на http://127.0.0.1
 | Архітектурні рішення (MADR)                           | [`docs/adr/`](./docs/adr/)             |
 | Власні стандарти: Definition of Done, шаблон spec     | [`docs/standards/`](./docs/standards/) |
 | Слід роботи з AI: промпти, відповіді, рев'ю виходу    | [`ai/`](./ai/)                         |
+| Продуктовий трек: вебкабінет, відкриті рішення        | [`docs/product/`](./docs/product/)     |
 | Правила для AI-агента                                 | [`AGENTS.md`](./AGENTS.md)             |
