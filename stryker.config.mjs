@@ -17,6 +17,7 @@ export default {
     'src/shared/**/*.ts',
     '!src/shared/db/client.ts', // pool wiring: integration
     '!src/shared/db/migrat*.ts', // migrator: integration
+    '!src/shared/db/seed.ts', // seed SQL: integration (test/integration/seed.test.ts)
     '!src/shared/db/rows.ts', // types only
     '!src/shared/db/memory-store.ts', // reference data
   ],
