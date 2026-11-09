@@ -31,7 +31,9 @@
     "web:install": "npm ci --prefix web",
     "web:dev": "npm run dev --prefix web",
     "web:build": "npm run build --prefix web",
-    "web:typecheck": "npm run typecheck --prefix web"
+    "web:typecheck": "npm run typecheck --prefix web",
+    "perf:load": "tsx scripts/perf/load.ts",
+    "perf:down": "docker compose -f perf/compose.yml down -v"
   },
   "dependencies": {
     "@fastify/cors": "^11.3.0",
