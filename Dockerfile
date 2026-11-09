@@ -14,6 +14,14 @@ COPY tsconfig.json tsconfig.build.json ./
 COPY src ./src
 RUN npm run build
 
+# Frontend (web/, ADR 0008): built here, served by Fastify from /app/public.
+FROM ${NODE_IMAGE} AS web
+WORKDIR /web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci --ignore-scripts
+COPY web ./
+RUN npm run build
+
 FROM ${NODE_IMAGE} AS prod-deps
 WORKDIR /app
 COPY package.json package-lock.json ./
@@ -22,12 +30,14 @@ RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 FROM ${NODE_IMAGE}
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
-    PORT=3000
+    PORT=3000 \
+    WEB_DIST_DIR=/app/public
 WORKDIR /app
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY package.json ./
 COPY migrations ./migrations
+COPY --from=web /web/dist ./public
 # SHA of the deployed commit → GET /version (spec.md §8, CD criterion 2)
 ARG GIT_COMMIT=unknown
 ENV GIT_COMMIT=${GIT_COMMIT}

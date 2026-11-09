@@ -27,7 +27,11 @@
     "test:all": "npm run build && vitest run",
     "test:coverage": "vitest run --project unit --project integration --coverage",
     "test:mutation": "stryker run",
-    "db:seed": "tsx src/seed.ts"
+    "db:seed": "tsx src/seed.ts",
+    "web:install": "npm ci --prefix web",
+    "web:dev": "npm run dev --prefix web",
+    "web:build": "npm run build --prefix web",
+    "web:typecheck": "npm run typecheck --prefix web"
   },
   "dependencies": {
     "@fastify/cors": "^11.3.0",
