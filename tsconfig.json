@@ -16,6 +16,14 @@
     "esModuleInterop": true,
     "customConditions": ["source"]
   },
-  "include": ["src/**/*", "test/**/*", "scripts/**/*.ts", "packages/*/src/**/*", "packages/*/test/**/*", "vitest.config.ts", "vitest.mutation.config.ts"],
+  "include": [
+    "src/**/*",
+    "test/**/*",
+    "scripts/**/*.ts",
+    "packages/*/src/**/*",
+    "packages/*/test/**/*",
+    "vitest.config.ts",
+    "vitest.mutation.config.ts"
+  ],
   "exclude": ["node_modules", "dist", "packages/*/dist", "coverage", "reports"]
 }
