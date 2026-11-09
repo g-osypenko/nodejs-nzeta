@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryAuthRepository } from '../../../src/modules/auth/auth.repository.memory.js';
 import { createAuthService, type AuthService } from '../../../src/modules/auth/auth.service.js';
 import { createMemoryStore, type MemoryStore } from '../../../src/shared/db/memory-store.js';
@@ -22,6 +22,9 @@ describe('auth.service', () => {
     store = createMemoryStore();
     auth = createAuthService({ repo: createMemoryAuthRepository(store), sessionTtlHours: 2 });
   });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
 
   it('register stores a USER with a scrypt hash, never the plain password', async () => {
     const user = await auth.register(creds);
@@ -40,7 +43,11 @@ describe('auth.service', () => {
 
   it('login returns an opaque token; only its sha256 is stored; expiry = now + TTL', async () => {
     const user = await auth.register(creds);
-    const before = Date.now();
+    // Frozen clock (only Date; scrypt timers stay real): the expiry is exact, not "±50 ms",
+    // which flaked on a slower CI runner (+56 ms).
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const now = new Date('2026-11-09T12:00:00.000Z');
+    vi.setSystemTime(now);
     const { token, expiresAt } = await auth.login(creds);
 
     expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/); // 32 random bytes, base64url
@@ -48,9 +55,7 @@ describe('auth.service', () => {
     expect(session?.userId).toBe(user.id);
     expect(session?.tokenHash).toMatch(/^[0-9a-f]{64}$/);
     expect(session?.tokenHash).not.toBe(token);
-    const ttl = expiresAt.getTime() - before;
-    expect(ttl).toBeGreaterThanOrEqual(2 * 3_600_000 - 50);
-    expect(ttl).toBeLessThanOrEqual(2 * 3_600_000 + 50);
+    expect(expiresAt.getTime() - now.getTime()).toBe(2 * 3_600_000);
   });
 
   it('login: unknown email and wrong password give the SAME error (no user enumeration)', async () => {
