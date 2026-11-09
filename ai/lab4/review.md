@@ -31,6 +31,8 @@
 
 ## Додатково (не в топ-3)
 
+- **Аудит «CI реально падає» ([PR #5](https://github.com/g-osypenko/nodejs-nzeta/pull/5)):** у першому прогоні `docker` лишився зеленим. Запланована агентом «помилка типів» `const limit: number = raw ?? 'ten'` при `raw: any` має тип `any`, тож `tsc` мовчить. Її зловив лише ESLint (`no-explicit-any`) — живий доказ, навіщо заборона `any` у `AGENTS.md` §4. Додано коміт зі справжньою помилкою (`TS2322`) → усі 5 checks червоні, PR **BLOCKED**.
+
 - commitlint знайшов у `main` коміт Лаби 3 `d07d16e` із заголовком 122 символи: правило Conventional Commits існувало лише в тексті `AGENTS.md`. Тепер його перевіряє машина (хук `commit-msg` + job `commits`). Історію не переписуємо.
 - Хук `commit-msg` одразу заблокував і коміт агента (`docs(readme): CI/CD overview…` → `subject-case`).
 - Перша версія тесту data-фази рахувала транзакції через `pg_stat_database`, яка оновлюється із затримкою. Замінено детермінованим тригером із `txid_current()` ще до коміту.

@@ -20,13 +20,13 @@
 
 **4. Перевірка.**
 
-| Що                                | Доказ                                                                                                                                                                     |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| CI зелений на чистому PR          | [run 42586442587](https://github.com/g-osypenko/nodejs-nzeta/actions/runs/42586442587): `check` · `build` · `test` · `commits` · `docker`                                 |
-| CI блокує брудний PR (критерій 1) | [PR #5](https://github.com/g-osypenko/nodejs-nzeta/pull/5): безпековий баг HWID, не-conventional коміти, Prettier/ESLint/типи → червоні checks, мердж заблоковано         |
-| Branch protection                 | 5 required checks, strict, PR обов'язковий, без force-push                                                                                                                |
-| Фази міграцій (критерій 4)        | `npm run test:integration` → [`migrations.test.ts`](test/integration/migrations.test.ts): 4 пакети = 4 транзакції; `INVALID`-індекс перебудовано; `55P03` під блокуванням |
-| CD + `/version` (критерії 2–3)    | **TODO після налаштування стейджу:** посилання на run `deploy (staging)` · `GET https://<стейдж>/version` → `<sha мердж-коміта>`                                          |
+| Що                                | Доказ                                                                                                                                                                                                                                                                                                               |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CI зелений на чистому PR          | [run 42586442587](https://github.com/g-osypenko/nodejs-nzeta/actions/runs/42586442587): `check` · `build` · `test` · `commits` · `docker`                                                                                                                                                                           |
+| CI блокує брудний PR (критерій 1) | [PR #5](https://github.com/g-osypenko/nodejs-nzeta/pull/5), коміти через API без хуків: баг HWID → `test` ✖ (12 тестів) і `build` ✖ (smoke); не-conventional → `commits` ✖; `any` → `check` ✖; `TS2322` → `docker` ✖ — [run](https://github.com/g-osypenko/nodejs-nzeta/actions/runs/42586798834), стан **BLOCKED** |
+| Branch protection                 | 5 required checks, strict, PR обов'язковий, без force-push                                                                                                                                                                                                                                                          |
+| Фази міграцій (критерій 4)        | `npm run test:integration` → [`migrations.test.ts`](test/integration/migrations.test.ts): 4 пакети = 4 транзакції; `INVALID`-індекс перебудовано; `55P03` під блокуванням                                                                                                                                           |
+| CD + `/version` (критерії 2–3)    | **TODO після налаштування стейджу:** посилання на run `deploy (staging)` · `GET https://<стейдж>/version` → `<sha мердж-коміта>`                                                                                                                                                                                    |
 
 ```bash
 make ci            # те саме, що required checks (потрібен Docker)
