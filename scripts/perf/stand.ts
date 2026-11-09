@@ -98,13 +98,24 @@ export async function getJson<T>(path: string, init: RequestInit = {}): Promise<
   return (await res.json()) as T;
 }
 
+/**
+ * A well-behaved client: on 503 AUTH_BUSY it waits Retry-After and tries again (ADR 0010).
+ * The first "after" run proved the need — 50 parallel set-up logins were (correctly) shed.
+ */
 export async function login(email: string, password: string): Promise<string> {
-  const { token } = await getJson<{ token: string }>('/api/v1/auth/login', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ email, password }),
-  });
-  return token;
+  for (let attempt = 1; ; attempt += 1) {
+    const res = await fetch(`${APP_URL}/api/v1/auth/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    if (res.ok) return ((await res.json()) as { token: string }).token;
+    if (res.status !== 503 || attempt >= 20) {
+      throw new Error(`login ${email} → ${res.status} ${await res.text()}`);
+    }
+    const retryAfterS = Number(res.headers.get('retry-after') ?? 1);
+    await new Promise((r) => setTimeout(r, retryAfterS * 1000));
+  }
 }
 
 export interface K6Run {
