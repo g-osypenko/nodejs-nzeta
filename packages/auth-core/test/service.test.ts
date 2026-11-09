@@ -16,12 +16,14 @@ function fakes(): {
   sessions: Map<string, SessionRecord>;
   setUser: (u: AuthUser | null) => void;
   logs: string[];
+  fields: Record<string, unknown>[];
 } {
   const users = new Map<string, UserRecord>();
   const sessions = new Map<string, SessionRecord>();
   let current: AuthUser | null = null;
   let seq = 0;
   const logs: string[] = [];
+  const fields: Record<string, unknown>[] = [];
   const store: AuthStore = {
     async createUser(u) {
       if ([...users.values()].some((x) => x.email === u.email)) throw new Error('EMAIL_TAKEN');
@@ -60,10 +62,19 @@ function fakes(): {
     clock: { now: () => new Date('2026-11-09T12:00:00.000Z') },
     tokens: { generate: () => `token-${seq}`, digest: (t) => `digest(${t})` },
     currentUser: { get: () => current },
-    logger: { info: (_f, msg) => logs.push(msg), warn: (_f, msg) => logs.push(msg) },
+    logger: {
+      info: (f, msg): void => {
+        logs.push(msg);
+        fields.push(f);
+      },
+      warn: (f, msg): void => {
+        logs.push(msg);
+        fields.push(f);
+      },
+    },
     sessionTtlMs: 2 * 3_600_000,
   };
-  return { deps, users, sessions, setUser: (u) => (current = u), logs };
+  return { deps, users, sessions, setUser: (u) => (current = u), logs, fields };
 }
 
 const creds = { email: 'alice@test.local', password: 'alice-password' };
@@ -85,6 +96,7 @@ describe('@lch/auth-core service', () => {
       passwordHash: 'kdf(alice-password)',
     });
     expect(f.logs).toContain('user registered');
+    expect(f.fields).toContainEqual({ newUserId: user.id });
   });
 
   it('login: token is returned, only its digest is stored; expiry = injected clock + TTL', async () => {
@@ -97,12 +109,17 @@ describe('@lch/auth-core service', () => {
       expiresAt: new Date('2026-11-09T14:00:00.000Z'),
     });
     expect(expiresAt).toEqual(session?.expiresAt);
+    expect(f.logs).toContain('session created');
+    expect(f.fields).toContainEqual({ loginUserId: user.id });
   });
 
   it('unknown email and wrong password give the same INVALID_CREDENTIALS', async () => {
     await auth.register(creds);
+    // The message reaches the API client (host maps AuthError → AppError keeping it): contract.
     await expect(auth.login({ ...creds, password: 'wrong-password' })).rejects.toMatchObject({
       code: 'INVALID_CREDENTIALS',
+      message: 'Invalid email or password',
+      name: 'AuthError',
     });
     await expect(auth.login({ ...creds, email: 'bob@test.local' })).rejects.toMatchObject({
       code: 'INVALID_CREDENTIALS',
@@ -119,7 +136,10 @@ describe('@lch/auth-core service', () => {
 
   it('me and logout need a current user (UNAUTHENTICATED, as a rejected promise)', async () => {
     const me = auth.me();
-    await expect(me).rejects.toMatchObject({ code: 'UNAUTHENTICATED' });
+    await expect(me).rejects.toMatchObject({
+      code: 'UNAUTHENTICATED',
+      message: 'Authentication required',
+    });
     await expect(auth.logout('t')).rejects.toMatchObject({ code: 'UNAUTHENTICATED' });
   });
 
@@ -132,7 +152,10 @@ describe('@lch/auth-core service', () => {
     expect(f.sessions.size).toBe(0);
 
     f.users.clear();
-    await expect(auth.me()).rejects.toMatchObject({ code: 'USER_NOT_FOUND' });
+    await expect(auth.me()).rejects.toMatchObject({
+      code: 'USER_NOT_FOUND',
+      message: 'User not found',
+    });
   });
 
   it('ensureAdmin is idempotent and stores an ADMIN with a KDF hash', async () => {

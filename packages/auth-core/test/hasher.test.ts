@@ -60,7 +60,10 @@ describe('password hasher with admission control', () => {
     const third = hasher.verify('c', 'hash:c');
 
     await expect(third).rejects.toBeInstanceOf(AuthError);
-    await expect(third).rejects.toMatchObject({ code: 'AUTH_BUSY' });
+    await expect(third).rejects.toMatchObject({
+      code: 'AUTH_BUSY',
+      message: 'Too many sign-ins at once, retry shortly',
+    });
     expect(hasher.stats()).toEqual({ running: 1, queued: 1, rejected: 1 });
 
     kdf.finish('a');
@@ -95,12 +98,14 @@ describe('password hasher with admission control', () => {
 
   it('rejects nonsensical limits at construction, not on the first sign-in', () => {
     const kdf = controllableKdf();
-    expect(() => createPasswordHasher(kdf, { maxConcurrent: 0, maxQueued: 1 })).toThrow(RangeError);
+    expect(() => createPasswordHasher(kdf, { maxConcurrent: 0, maxQueued: 1 })).toThrow(
+      'maxConcurrent must be a positive integer',
+    );
     expect(() => createPasswordHasher(kdf, { maxConcurrent: 1.5, maxQueued: 1 })).toThrow(
       RangeError,
     );
     expect(() => createPasswordHasher(kdf, { maxConcurrent: 1, maxQueued: -1 })).toThrow(
-      RangeError,
+      'maxQueued must be a non-negative integer',
     );
   });
 });
