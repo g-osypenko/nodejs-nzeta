@@ -13,6 +13,11 @@ on:
 permissions:
   contents: read
 
+# Explicit bash = `bash -eo pipefail`: a failing command inside a pipe fails the step.
+defaults:
+  run:
+    shell: bash
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -119,12 +124,15 @@ jobs:
             -e DATA_SOURCE=memory -e WEBHOOK_SECRET=ci-container-secret-01 \
             -e ADMIN_EMAIL=admin@lch.local -e ADMIN_PASSWORD=ci-admin-password \
             "$IMAGE:$GITHUB_SHA"
-          got=""
+          # curl alone decides readiness: in `curl | jq` the exit status is jq's (0 on empty input).
+          body=""
           for _ in $(seq 30); do
-            if got=$(curl -fsS http://127.0.0.1:3000/version | jq -r .commit); then break; fi
+            if body=$(curl -fsS http://127.0.0.1:3000/version 2>/dev/null); then break; fi
             sleep 1
           done
           docker logs app | tail -n 5
+          got=$(printf '%s' "$body" | jq -r .commit)
+          echo "/version → $got"
           test "$got" = "$GITHUB_SHA"
           curl -fsS http://127.0.0.1:3000/api/v1/plans | jq -e 'length == 3'
       - name: log in to GHCR
