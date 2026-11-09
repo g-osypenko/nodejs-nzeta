@@ -21,6 +21,7 @@ import { createContext, runWithContext, type RequestContext } from './shared/con
 import { isDbUnavailable } from './shared/db/errors.js';
 import { AppError } from './shared/errors.js';
 import { logger } from './shared/logger.js';
+import { createRuntimeMetrics } from './shared/runtime-metrics.js';
 import { isSpaNavigation, registerWeb, sendSpaShell } from './web.js';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -173,6 +174,13 @@ export function buildApp(container: Container): App {
 
   app.get('/version', async () => ({ status: 'OK', commit: container.config.gitCommit }));
   app.get('/health', async () => ({ status: 'OK', db: await container.checkHealth() }));
+  if (container.config.debugRuntime) {
+    const runtime = createRuntimeMetrics();
+    app.addHook('onClose', async () => runtime.stop());
+    app.get<{ Querystring: { reset?: string } }>('/debug/runtime', async (request) =>
+      runtime.snapshot(request.query.reset === '1'),
+    );
+  }
 
   if (webDistDir !== null) registerWeb(app, webDistDir);
 

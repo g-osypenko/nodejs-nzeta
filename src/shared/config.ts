@@ -15,6 +15,7 @@ const EnvSchema = z
     GIT_COMMIT: z.string().min(1).default('dev-local'),
     DEBUG_HEADERS: z.stringbool().default(false),
     WEB_DIST_DIR: z.string().min(1).optional(),
+    DEBUG_RUNTIME: z.stringbool().default(false),
   })
   .refine((env) => env.DATA_SOURCE === 'memory' || env.DATABASE_URL !== undefined, {
     message: 'DATABASE_URL is required when DATA_SOURCE=postgres',
@@ -36,6 +37,8 @@ export interface AppConfig {
   debugHeaders: boolean;
   /** Built frontend (web/dist) served on the same origin; null = API only (ADR 0008). */
   webDistDir: string | null;
+  /** Exposes GET /debug/runtime (CPU, ELU, event-loop delay, RSS) for load tests only. */
+  debugRuntime: boolean;
 }
 
 /** Validates the environment once at startup; an invalid env fails the process immediately. */
@@ -59,5 +62,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     gitCommit: e.GIT_COMMIT,
     debugHeaders: e.DEBUG_HEADERS,
     webDistDir: e.WEB_DIST_DIR ?? null,
+    debugRuntime: e.DEBUG_RUNTIME,
   };
 }
