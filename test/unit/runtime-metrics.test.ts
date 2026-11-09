@@ -7,17 +7,23 @@ describe('runtime metrics for load tests (spec §9)', () => {
     const m = createRuntimeMetrics();
     try {
       const before = m.snapshot(false);
-      const until = performance.now() + 30;
-      while (performance.now() < until) {
-        // busy main thread for ~30 ms
+      // Spin until the OS has charged 50 ms of CPU to the process. A fixed wall-time spin is not
+      // enough: on a loaded host the thread is preempted and wall time passes without CPU time
+      // (the very "CPU vs waiting" difference these metrics exist to show).
+      const cpu0 = process.cpuUsage();
+      const deadline = performance.now() + 5000;
+      let spunMs = 0;
+      const start = performance.now();
+      while (process.cpuUsage(cpu0).user < 50_000 && performance.now() < deadline) {
+        spunMs = performance.now() - start;
       }
       // ELU is accounted at event-loop iteration boundaries: let the loop turn once.
       await new Promise<void>((resolve) => setImmediate(resolve));
       const after = m.snapshot(true);
-      expect(after.cpuUserMs + after.cpuSystemMs).toBeGreaterThan(
-        before.cpuUserMs + before.cpuSystemMs,
-      );
-      expect(after.elu.activeMs).toBeGreaterThan(before.elu.activeMs);
+      const cpuMs = after.cpuUserMs + after.cpuSystemMs - (before.cpuUserMs + before.cpuSystemMs);
+      expect(cpuMs).toBeGreaterThanOrEqual(50);
+      // ELU counts wall time the loop was busy, so it covers the whole spin, preempted or not.
+      expect(after.elu.activeMs - before.elu.activeMs).toBeGreaterThanOrEqual(spunMs * 0.9);
       expect(after.memoryMb.rss).toBeGreaterThan(0);
       expect(after.eventLoopDelayMs.p99).toBeGreaterThanOrEqual(after.eventLoopDelayMs.p50);
     } finally {
