@@ -14,6 +14,10 @@ const EnvSchema = z
     SESSION_TTL_HOURS: z.coerce.number().int().positive().default(24),
     GIT_COMMIT: z.string().min(1).default('dev-local'),
     DEBUG_HEADERS: z.stringbool().default(false),
+    WEB_DIST_DIR: z.string().min(1).optional(),
+    DEBUG_RUNTIME: z.stringbool().default(false),
+    AUTH_HASH_CONCURRENCY: z.coerce.number().int().positive().default(1),
+    AUTH_HASH_QUEUE: z.coerce.number().int().min(0).default(8),
   })
   .refine((env) => env.DATA_SOURCE === 'memory' || env.DATABASE_URL !== undefined, {
     message: 'DATABASE_URL is required when DATA_SOURCE=postgres',
@@ -33,6 +37,12 @@ export interface AppConfig {
   gitCommit: string;
   /** Adds x-db-queries to responses (dev/smoke only). */
   debugHeaders: boolean;
+  /** Built frontend (web/dist) served on the same origin; null = API only (ADR 0008). */
+  webDistDir: string | null;
+  /** Exposes GET /debug/runtime (CPU, ELU, event-loop delay, RSS) for load tests only. */
+  debugRuntime: boolean;
+  /** Admission control of password hashing (spec.md §9, ADR 0010). */
+  authHashing: { maxConcurrent: number; maxQueued: number };
 }
 
 /** Validates the environment once at startup; an invalid env fails the process immediately. */
@@ -55,5 +65,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     sessionTtlHours: e.SESSION_TTL_HOURS,
     gitCommit: e.GIT_COMMIT,
     debugHeaders: e.DEBUG_HEADERS,
+    webDistDir: e.WEB_DIST_DIR ?? null,
+    debugRuntime: e.DEBUG_RUNTIME,
+    authHashing: { maxConcurrent: e.AUTH_HASH_CONCURRENCY, maxQueued: e.AUTH_HASH_QUEUE },
   };
 }

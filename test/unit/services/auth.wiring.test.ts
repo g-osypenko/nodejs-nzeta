@@ -1,6 +1,7 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryAuthRepository } from '../../../src/modules/auth/auth.repository.memory.js';
-import { createAuthService, type AuthService } from '../../../src/modules/auth/auth.service.js';
+import type { AuthService } from '@lch/auth-core';
+import { AuthError, createAppAuth, toAppError } from '../../../src/modules/auth/auth.adapters.js';
 import { createMemoryStore, type MemoryStore } from '../../../src/shared/db/memory-store.js';
 import { AppError } from '../../../src/shared/errors.js';
 import { asUser, runAs } from '../../support/fixtures.js';
@@ -10,17 +11,33 @@ const creds = { email: 'alice@test.local', password: 'alice-password' };
 async function codeOf(p: Promise<unknown>): Promise<string | null> {
   return p.then(
     () => null,
-    (e: unknown) => (e instanceof AppError ? e.code : `non-AppError: ${String(e)}`),
+    // The global error handler maps library errors the same way (src/app.ts mapError).
+    (e: unknown) => {
+      const mapped = e instanceof AuthError ? toAppError(e) : e;
+      return mapped instanceof AppError ? mapped.code : `non-AppError: ${String(e)}`;
+    },
   );
 }
 
-describe('auth.service', () => {
+/**
+ * Wiring of @lch/auth-core in the app (ADR 0010): real scrypt, SHA-256 tokens, the in-memory
+ * repository and the AsyncLocalStorage current user — the package itself is tested on fakes in
+ * packages/auth-core/test.
+ */
+describe('auth (app wiring of @lch/auth-core)', () => {
   let store: MemoryStore;
   let auth: AuthService;
 
   beforeEach(() => {
     store = createMemoryStore();
-    auth = createAuthService({ repo: createMemoryAuthRepository(store), sessionTtlHours: 2 });
+    auth = createAppAuth({
+      store: createMemoryAuthRepository(store),
+      sessionTtlHours: 2,
+      hashing: { maxConcurrent: 1, maxQueued: 8 },
+    }).service;
+  });
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('register stores a USER with a scrypt hash, never the plain password', async () => {
@@ -40,7 +57,11 @@ describe('auth.service', () => {
 
   it('login returns an opaque token; only its sha256 is stored; expiry = now + TTL', async () => {
     const user = await auth.register(creds);
-    const before = Date.now();
+    // Frozen clock (only Date; scrypt timers stay real): the expiry is exact, not "±50 ms",
+    // which flaked on a slower CI runner (+56 ms).
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const now = new Date('2026-11-09T12:00:00.000Z');
+    vi.setSystemTime(now);
     const { token, expiresAt } = await auth.login(creds);
 
     expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/); // 32 random bytes, base64url
@@ -48,9 +69,7 @@ describe('auth.service', () => {
     expect(session?.userId).toBe(user.id);
     expect(session?.tokenHash).toMatch(/^[0-9a-f]{64}$/);
     expect(session?.tokenHash).not.toBe(token);
-    const ttl = expiresAt.getTime() - before;
-    expect(ttl).toBeGreaterThanOrEqual(2 * 3_600_000 - 50);
-    expect(ttl).toBeLessThanOrEqual(2 * 3_600_000 + 50);
+    expect(expiresAt.getTime() - now.getTime()).toBe(2 * 3_600_000);
   });
 
   it('login: unknown email and wrong password give the SAME error (no user enumeration)', async () => {
