@@ -1,4 +1,4 @@
-.PHONY: all dev build start typecheck lint format check smoke test test-integration test-e2e coverage mutation migrate seed docker docker-run ci load load-sweep perf-down
+.PHONY: all dev build start typecheck lint format check smoke test test-integration test-e2e coverage mutation migrate seed docker docker-run ci load load-sweep perf-down profile explain lighthouse
 
 all: check build test smoke
 
@@ -62,11 +62,22 @@ docker-run:
 ci: check build smoke coverage test-e2e docker
 
 # Lab 5 — performance (spec.md §9). Stand: perf/compose.yml (needs Docker); reports → docs/perf/.
+# `make load LABEL=after` → docs/perf/load-after.md (the committed baseline is LABEL=baseline).
+LABEL ?= run
 load:
-	npm run perf:load -- --label=baseline
+	npm run perf:load -- --label=$(LABEL)
 
 load-sweep:
-	npm run perf:load -- --label=sweep --sweep="handshake:200,400,800,1200,1600;login:10,20,40,80" --repeats=1
+	npm run perf:load -- --label=$(LABEL)-sweep --sweep="handshake:200,400,800,1200,1600;login:10,20,40,80" --repeats=1
+
+profile:
+	npm run perf:profile -- --label=$(LABEL) --scenarios=handshake:800,login:30,storm:400
+
+explain:
+	npm run perf:explain -- --label=$(LABEL)
+
+lighthouse:
+	npm run perf:lighthouse -- --label=$(LABEL)
 
 perf-down:
 	npm run perf:down

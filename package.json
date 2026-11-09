@@ -36,7 +36,10 @@
     "web:build": "npm run build --prefix web",
     "web:typecheck": "npm run typecheck --prefix web",
     "perf:load": "tsx --conditions=source scripts/perf/load.ts",
-    "perf:down": "docker compose -f perf/compose.yml down -v"
+    "perf:down": "docker compose -f perf/compose.yml down -v",
+    "perf:profile": "tsx --conditions=source scripts/perf/profile.ts",
+    "perf:explain": "tsx --conditions=source scripts/perf/explain.ts",
+    "perf:lighthouse": "tsx --conditions=source scripts/perf/lighthouse.ts"
   },
   "dependencies": {
     "@fastify/cors": "^11.3.0",
