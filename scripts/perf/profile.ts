@@ -59,7 +59,9 @@ function analyse(p: CpuProfile): {
 } {
   const byId = new Map(p.nodes.map((n) => [n.id, n]));
   const self = new Map<number, number>();
-  p.samples.forEach((id, i) => self.set(id, (self.get(id) ?? 0) + (p.timeDeltas[i] ?? 0)));
+  // Sample COUNTS, not timeDeltas: under the container CPU quota the sampler thread is starved
+  // too, and a gap of up to ~90 ms was attributed to the next sample (mostly "(idle)").
+  p.samples.forEach((id) => self.set(id, (self.get(id) ?? 0) + 1));
   const layers = new Map<string, number>();
   const fns = new Map<string, number>();
   let total = 0;
@@ -67,6 +69,7 @@ function analyse(p: CpuProfile): {
     const n = byId.get(id);
     if (!n) continue;
     const { functionName, url, lineNumber } = n.callFrame;
+    if (functionName === '(idle)') continue; // shares are of BUSY main-thread time
     total += us;
     const layer = layerOf(url, functionName);
     layers.set(layer, (layers.get(layer) ?? 0) + us);
@@ -97,7 +100,8 @@ async function main(): Promise<void> {
   for (const p of points) {
     rmSync(profDir, { recursive: true, force: true });
     mkdirSync(profDir, { recursive: true });
-    await startApp('--cpu-prof --cpu-prof-dir=/profiles');
+    // 250 µs: with the default 1 ms the profile of a 0.5 ms request had almost no busy samples.
+    await startApp('--cpu-prof --cpu-prof-dir=/profiles --cpu-prof-interval=250');
     version = (await getJson<{ commit: string }>('/version')).commit;
     const tokens = await Promise.all(
       Array.from({ length: 50 }, (_, i) => login(`seed-${i + 1}@lch.local`, SEED_PASSWORD)),
@@ -113,15 +117,14 @@ async function main(): Promise<void> {
     writeFileSync(keep, raw);
     const a = analyse(JSON.parse(raw) as CpuProfile);
     const pct = (us: number): string => ((us / a.total) * 100).toFixed(1);
-    const busy = a.total - (a.layers.find(([l]) => l.startsWith('idle'))?.[1] ?? 0);
     sections.push(
       [
         `## \`${p.scenario}\` @ ${p.rate} RPS, ${duration}`,
         '',
         `Профіль: \`reports/perf/profile-${label}-${p.scenario}.cpuprofile\` (Chrome DevTools → Performance → Load profile). ` +
-          `Зайнятий main thread: **${pct(busy)} %** часу запису.`,
+          `Зайнятих семплів main thread: **${a.total}**; частки нижче — від зайнятого часу (idle виключено).`,
         '',
-        '| Шар | Self time, % |',
+        '| Шар | Частка зайнятого main thread, % |',
         '| :-- | --: |',
         ...a.layers.map(([l, us]) => `| ${l} | ${pct(us)} |`),
         '',
@@ -139,6 +142,7 @@ async function main(): Promise<void> {
     `- Версія (\`/version\`): \`${version}\` · ${new Date().toISOString()}`,
     '- Інструмент: вбудований V8 `--cpu-prof` (без залежностей), стенд як у `make load` (1 vCPU)',
     `- Відтворити: \`npx tsx scripts/perf/profile.ts ${process.argv.slice(2).join(' ')}\``,
+    '- **Профіль дає пропорції, а не абсолютну вартість:** семплування 250 мкс саме навантажує 1 vCPU (контрольний прогін handshake 800 RPS: ELU 76 % під профайлером проти 30 % без нього). Абсолютні CPU/ELU/латентність — у `load-*.md`.',
     '- Профіль бачить лише main thread: робота в потоках libuv (scrypt, частина I/O) тут не видна — її показує CPU процесу проти ELU у `load-*.md`.',
     '',
     ...sections,
