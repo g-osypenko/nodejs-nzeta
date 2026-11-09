@@ -90,7 +90,7 @@ function metric(s: K6Summary, name: string, value: string): number {
 }
 
 function seconds(d: string): number {
-  const m = /^(d+)(ms|s|m)$/.exec(d);
+  const m = /^(\d+)(ms|s|m)$/.exec(d);
   if (!m) throw new Error(`bad duration ${d}`);
   const n = Number(m[1]);
   return m[2] === 'ms' ? n / 1000 : m[2] === 'm' ? n * 60 : n;
@@ -110,7 +110,7 @@ function toMeasurement(
   const wall = durationSec * 1000;
   const byName: Measurement['byName'] = {};
   for (const [key, m] of Object.entries(s.metrics)) {
-    const name = /^http_req_duration{name:(.+)}$/.exec(key)?.[1];
+    const name = /^http_req_duration\{name:(.+)\}$/.exec(key)?.[1];
     const v = m?.values;
     if (name && v && (v['count'] ?? 0) > 0) {
       byName[name] = {

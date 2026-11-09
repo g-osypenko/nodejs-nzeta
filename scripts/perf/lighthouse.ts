@@ -41,20 +41,19 @@ const median = (xs: number[]): number => {
 };
 
 function lighthouse(url: string, out: string): Lhr {
-  const res = spawnSync(
-    'npx',
-    [
-      '-y',
-      LIGHTHOUSE,
-      url,
-      '--quiet',
-      '--output=json',
-      `--output-path=${out}`,
-      '--only-categories=performance,accessibility,best-practices,seo',
-      '--chrome-flags=--headless=new --no-first-run',
-    ],
-    { encoding: 'utf8', shell: process.platform === 'win32', stdio: ['ignore', 'pipe', 'pipe'] },
-  );
+  // One command string (our own constant arguments): npx is a .cmd shim on Windows and needs a shell.
+  const args = [
+    '-y',
+    LIGHTHOUSE,
+    url,
+    '--quiet',
+    '--output=json',
+    `--output-path=${out}`,
+    '--only-categories=performance,accessibility,best-practices,seo',
+    '--chrome-flags=--headless=new --no-first-run',
+  ];
+  const cmd = ['npx', ...args.map((a) => (/\s/.test(a) ? `"${a}"` : a))].join(' ');
+  const res = spawnSync(cmd, { encoding: 'utf8', shell: true, stdio: ['ignore', 'pipe', 'pipe'] });
   if (res.status !== 0) throw new Error(`lighthouse ${url} failed:\n${res.stderr}`);
   return JSON.parse(readFileSync(out, 'utf8')) as Lhr;
 }
