@@ -29,7 +29,7 @@ import {
 
 interface Options {
   label: string;
-  points: { scenario: string; rate: number }[];
+  points: { scenario: string; rate: number; loginRate?: number }[];
   repeats: number;
   duration: string;
   warmup: string;
@@ -51,8 +51,12 @@ function parseOptions(): Options {
         return rates.split(',').map((r) => ({ scenario, rate: Number(r) }));
       })
     : (arg('scenarios') ?? DEFAULT_SCENARIOS).split(',').map((p) => {
+        // storm:400+60 → 400 handshakes/s plus 60 logins/s at the same time
         const [scenario = '', rate = ''] = p.split(':');
-        return { scenario, rate: Number(rate) };
+        const [main = '', login] = rate.split('+');
+        return login === undefined
+          ? { scenario, rate: Number(main) }
+          : { scenario, rate: Number(main), loginRate: Number(login) };
       });
   return {
     label: arg('label') ?? 'run',
@@ -78,17 +82,48 @@ interface Measurement {
   eluPct: number; // main-thread busy time / test wall time
   loopDelayP99: number;
   rssMb: number;
+  byName: Record<string, { p50: number; p95: number; p99: number; count: number }>;
 }
 
 function metric(s: K6Summary, name: string, value: string): number {
   return s.metrics[name]?.values[value] ?? 0;
 }
 
-function toMeasurement(s: K6Summary, a: RuntimeSnapshot, b: RuntimeSnapshot): Measurement {
-  const wall = s.state.testRunDurationMs;
+function seconds(d: string): number {
+  const m = /^(d+)(ms|s|m)$/.exec(d);
+  if (!m) throw new Error(`bad duration ${d}`);
+  const n = Number(m[1]);
+  return m[2] === 'ms' ? n / 1000 : m[2] === 'm' ? n * 60 : n;
+}
+
+/**
+ * Rates use the configured load duration, not k6 testRunDurationMs (that one also covers setup,
+ * teardown and gracefulStop and made every rate look ~10 % low). CPU and ELU deltas between the
+ * snapshots include the idle k6 start-up, which adds ~0 server work.
+ */
+function toMeasurement(
+  s: K6Summary,
+  a: RuntimeSnapshot,
+  b: RuntimeSnapshot,
+  durationSec: number,
+): Measurement {
+  const wall = durationSec * 1000;
+  const byName: Measurement['byName'] = {};
+  for (const [key, m] of Object.entries(s.metrics)) {
+    const name = /^http_req_duration{name:(.+)}$/.exec(key)?.[1];
+    const v = m?.values;
+    if (name && v && (v['count'] ?? 0) > 0) {
+      byName[name] = {
+        p50: v['med'] ?? 0,
+        p95: v['p(95)'] ?? 0,
+        p99: v['p(99)'] ?? 0,
+        count: v['count'] ?? 0,
+      };
+    }
+  }
   const cpu = b.cpuUserMs + b.cpuSystemMs - (a.cpuUserMs + a.cpuSystemMs);
   return {
-    rps: metric(s, 'http_reqs', 'rate'),
+    rps: metric(s, 'http_reqs', 'count') / durationSec,
     p50: metric(s, 'http_req_duration', 'med'),
     p95: metric(s, 'http_req_duration', 'p(95)'),
     p99: metric(s, 'http_req_duration', 'p(99)'),
@@ -100,6 +135,7 @@ function toMeasurement(s: K6Summary, a: RuntimeSnapshot, b: RuntimeSnapshot): Me
     eluPct: ((b.elu.activeMs - a.elu.activeMs) / wall) * 100,
     loopDelayP99: b.eventLoopDelayMs.p99,
     rssMb: b.memoryMb.rss,
+    byName,
   };
 }
 
@@ -130,19 +166,20 @@ async function main(): Promise<void> {
   const adminToken = await login(ADMIN.email, ADMIN.password);
   const env = { TOKENS_LIST: tokens.join(','), ADMIN_TOKEN: adminToken };
 
-  const results: { scenario: string; rate: number; runs: Measurement[] }[] = [];
+  const results: { scenario: string; rate: number; loginRate?: number; runs: Measurement[] }[] = [];
   for (const p of o.points) {
     log(`${p.scenario} @ ${p.rate} rps: warm-up ${o.warmup}`);
-    runK6({ ...p, duration: o.warmup, env }, `warmup-${p.scenario}`);
+    const pEnv = p.loginRate === undefined ? env : { ...env, LOGIN_RATE: String(p.loginRate) };
+    runK6({ ...p, duration: o.warmup, env: pEnv }, `warmup-${p.scenario}`);
     const runs: Measurement[] = [];
     for (let i = 1; i <= o.repeats; i += 1) {
       const a = await getJson<RuntimeSnapshot>('/debug/runtime?reset=1');
       const s = runK6(
-        { ...p, duration: o.duration, env },
+        { ...p, duration: o.duration, env: pEnv },
         `${o.label}-${p.scenario}-${p.rate}-${i}`,
       );
       const b = await getJson<RuntimeSnapshot>('/debug/runtime');
-      const m = toMeasurement(s, a, b);
+      const m = toMeasurement(s, a, b, seconds(o.duration));
       runs.push(m);
       log(
         `  #${i}: ${m.rps.toFixed(0)} rps, p50 ${m.p50.toFixed(1)} / p95 ${m.p95.toFixed(1)} / p99 ${m.p99.toFixed(1)} ms, ` +
@@ -166,7 +203,7 @@ async function main(): Promise<void> {
   const rows = results.map((r) =>
     [
       `\`${r.scenario}\``,
-      String(r.rate),
+      r.loginRate === undefined ? String(r.rate) : `${r.rate} + ${r.loginRate} login`,
       col((m) => m.rps, 0)(r),
       col((m) => m.p50)(r),
       col((m) => m.p95)(r),
@@ -179,6 +216,17 @@ async function main(): Promise<void> {
       col((m) => m.rssMb, 0)(r),
     ].join(' | '),
   );
+  // Per request type: does one module slow down another in a mixed load?
+  const typeRows = results.flatMap((r) => {
+    const names = [...new Set(r.runs.flatMap((m) => Object.keys(m.byName)))];
+    if (names.length < 2) return [];
+    return names.map((n) => {
+      const pick = (k: 'p50' | 'p95' | 'p99'): string =>
+        stat(r.runs.map((m) => m.byName[n]?.[k] ?? NaN));
+      const cells = [`\`${r.scenario}\``, n, pick('p50'), pick('p95'), pick('p99')];
+      return `| ${cells.join(' | ')} |`;
+    });
+  });
   const md = [
     `# Навантаження: ${o.label}`,
     '',
@@ -192,6 +240,16 @@ async function main(): Promise<void> {
     '| :-- | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: |',
     ...rows.map((r) => `| ${r} |`),
     '',
+    ...(typeRows.length === 0
+      ? []
+      : [
+          'За типом запиту (змішані сценарії):',
+          '',
+          '| Сценарій | Запит | p50, мс | p95, мс | p99, мс |',
+          '| :-- | :-- | --: | --: | --: |',
+          ...typeRows,
+          '',
+        ]),
     '`Dropped` — прибуття, які k6 не зміг обслужити (усі VU зайняті): ознака насичення. CPU > ELU — роботу виконують потоки libuv (scrypt) або GC; високий p99 за низьких CPU й ELU — очікування (БД, пул з’єднань, черга threadpool).',
     '',
   ].join('\n');

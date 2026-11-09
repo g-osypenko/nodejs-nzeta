@@ -24,24 +24,45 @@ const OUT = __ENV.OUT || '/out/summary.json';
 // Expected business answers (403 HWID_MISMATCH / KEY_EXPIRED, 404 KEY_NOT_FOUND) are not failures.
 http.setResponseCallback(http.expectedStatuses({ min: 200, max: 499 }));
 
+function arrival(exec, rate) {
+  return {
+    executor: 'constant-arrival-rate',
+    exec,
+    rate,
+    timeUnit: '1s',
+    duration: DURATION,
+    preAllocatedVUs: Math.min(Math.max(20, Math.ceil(rate / 2)), 1000),
+    maxVUs: Math.min(Math.max(50, rate * 2), 3000),
+    gracefulStop: '5s',
+  };
+}
+
+// storm: the handshake load of RATE plus a login burst of LOGIN_RATE at the same time — does one
+// module degrade another on the shared CPU?
+const LOGIN_RATE = Number(__ENV.LOGIN_RATE || 60);
+const NAMES = [
+  'handshake',
+  'login',
+  'me',
+  'licenses',
+  'config-get',
+  'config-put',
+  'plans',
+  'admin-list',
+];
+
 export const options = {
   summaryTrendStats: ['avg', 'min', 'med', 'p(90)', 'p(95)', 'p(99)', 'max', 'count'],
-  scenarios: {
-    load: {
-      executor: 'constant-arrival-rate',
-      exec: SCENARIO === 'login' ? 'loginFlow' : SCENARIO, // `login` is the setup helper
-      rate: RATE,
-      timeUnit: '1s',
-      duration: DURATION,
-      preAllocatedVUs: Math.min(Math.max(20, Math.ceil(RATE / 2)), 1000),
-      maxVUs: Math.min(Math.max(50, RATE * 2), 3000),
-      gracefulStop: '5s',
-    },
-  },
+  scenarios:
+    SCENARIO === 'storm'
+      ? { handshake: arrival('handshake', RATE), login: arrival('loginFlow', LOGIN_RATE) }
+      : { load: arrival(SCENARIO === 'login' ? 'loginFlow' : SCENARIO, RATE) }, // `login` is the setup helper
   thresholds: {
-    // No SLA gate here: thresholds only make k6 keep these values in the summary.
+    // No SLA gate here: thresholds only make k6 keep these values (and per-request-type
+    // sub-metrics) in the summary.
     http_req_failed: ['rate>=0'],
     dropped_iterations: ['count>=0'],
+    ...Object.fromEntries(NAMES.map((n) => [`http_req_duration{name:${n}}`, ['max>=0']])),
   },
 };
 

@@ -24,10 +24,13 @@ export interface RuntimeMetrics {
 }
 
 const NS_PER_MS = 1e6;
+// The histogram records the whole interval between sampling ticks; the delay is what exceeds it.
+const RESOLUTION_MS = 10;
+const lateMs = (ns: number): number => Math.max(0, ns / NS_PER_MS - RESOLUTION_MS);
 const round = (n: number): number => Math.round(n * 100) / 100;
 
 export function createRuntimeMetrics(): RuntimeMetrics {
-  const delay = monitorEventLoopDelay({ resolution: 10 });
+  const delay = monitorEventLoopDelay({ resolution: RESOLUTION_MS });
   delay.enable();
   return {
     snapshot(resetDelay): RuntimeSnapshot {
@@ -40,9 +43,9 @@ export function createRuntimeMetrics(): RuntimeMetrics {
         cpuSystemMs: round(cpu.system / 1000),
         elu: { idleMs: round(elu.idle), activeMs: round(elu.active) },
         eventLoopDelayMs: {
-          p50: round(delay.percentile(50) / NS_PER_MS),
-          p99: round(delay.percentile(99) / NS_PER_MS),
-          max: round(delay.max / NS_PER_MS),
+          p50: round(lateMs(delay.percentile(50))),
+          p99: round(lateMs(delay.percentile(99))),
+          max: round(lateMs(delay.max)),
         },
         memoryMb: { rss: round(mem.rss / 2 ** 20), heapUsed: round(mem.heapUsed / 2 ** 20) },
       };
