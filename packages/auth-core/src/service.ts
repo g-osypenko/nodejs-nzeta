@@ -27,8 +27,9 @@ export function createAuthService(deps: AuthDeps): AuthService {
 
     async login({ email, password }) {
       const user = await store.findUserByEmail(email);
-      // Same error for an unknown email and a wrong password: do not reveal which emails exist.
-      if (!user || !(await hasher.verify(password, user.passwordHash))) {
+      // Same error for an unknown email, a code-only account (no password) and a wrong password:
+      // do not reveal which emails exist or how they sign in.
+      if (!user?.passwordHash || !(await hasher.verify(password, user.passwordHash))) {
         throw new AuthError('INVALID_CREDENTIALS', 'Invalid email or password');
       }
       const token = tokens.generate();

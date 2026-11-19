@@ -127,6 +127,31 @@ describe('@lch/auth-core service', () => {
     expect(f.sessions.size).toBe(0);
   });
 
+  it('a code-only account (no password) gets INVALID_CREDENTIALS without touching the KDF', async () => {
+    let verified = 0;
+    auth = createAuthService({
+      ...f.deps,
+      hasher: {
+        hash: f.deps.hasher.hash,
+        verify: async (): Promise<boolean> => {
+          verified += 1;
+          return true;
+        },
+      },
+    });
+    const id = 'u-code-only';
+    f.users.set(id, {
+      id,
+      email: creds.email,
+      role: 'USER',
+      passwordHash: null,
+      createdAt: new Date(0),
+    });
+    await expect(auth.login(creds)).rejects.toMatchObject({ code: 'INVALID_CREDENTIALS' });
+    expect(verified).toBe(0);
+    expect(f.sessions.size).toBe(0);
+  });
+
   it('authenticate resolves the digest at the injected time; unknown token → null', async () => {
     await auth.register(creds);
     const { token } = await auth.login(creds);
