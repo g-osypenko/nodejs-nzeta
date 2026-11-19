@@ -142,6 +142,156 @@ export function describeApiContract(label: string, start: () => Promise<TestApp>
       });
     });
 
+    describe('passwordless sign-in and cookie session (ADR 0011)', () => {
+      const SAME_ORIGIN = { 'sec-fetch-site': 'same-origin' };
+
+      const letterTo = (to: string): { code: string; link: string } => {
+        const letter = (t.container.outbox ?? []).filter((m) => m.to === to).at(-1);
+        if (!letter) throw new Error(`no sign-in letter to ${to}`);
+        return letter;
+      };
+      const sessionCookie = (res: LightMyRequestResponse): string => {
+        const set = res.cookies.find((c) => c.name === 'lch_session');
+        if (!set) throw new Error(`no session cookie: ${res.statusCode} ${res.body}`);
+        return `lch_session=${set.value}`;
+      };
+      const signIn = async (to: string): Promise<string> => {
+        await call('POST', '/api/v1/auth/code', { body: { email: to } });
+        const res = await call('POST', '/api/v1/auth/code/verify', {
+          body: { email: to, code: letterTo(to).code },
+        });
+        return sessionCookie(res);
+      };
+
+      it('code: 202 → letter with a 6-digit code and a link; verify sets an httpOnly cookie', async () => {
+        const e = `otp-${randomUUID()}@test.local`;
+        const sent = await call('POST', '/api/v1/auth/code', { body: { email: e.toUpperCase() } });
+        expect(sent.statusCode).toBe(202);
+        expect(body(sent)).toHaveProperty('expiresAt');
+        const letter = letterTo(e);
+        expect(letter.code).toMatch(/^\d{6}$/);
+        expect(letter.link).toMatch(/\/login\/verify#token=[\w-]{43}$/);
+
+        const wrong = String((Number(letter.code) + 1) % 1_000_000).padStart(6, '0');
+        const bad = await call('POST', '/api/v1/auth/code/verify', {
+          body: { email: e, code: wrong },
+        });
+        expect(bad.statusCode).toBe(401);
+        expect(code(bad)).toBe('INVALID_CODE');
+
+        const ok = await call('POST', '/api/v1/auth/code/verify', {
+          body: { email: e, code: letter.code },
+        });
+        expect(ok.statusCode).toBe(200);
+        expect(body(ok)['user']).toMatchObject({ email: e, role: 'USER' });
+        expect(body(ok)).not.toHaveProperty('token');
+        const set = ok.cookies.find((c) => c.name === 'lch_session');
+        expect(set).toMatchObject({ httpOnly: true, sameSite: 'Lax', path: '/' });
+
+        const me = await call('GET', '/api/v1/auth/me', { headers: { cookie: sessionCookie(ok) } });
+        expect(body(me)['email']).toBe(e);
+        // A used code does not work twice.
+        const reused = await call('POST', '/api/v1/auth/code/verify', {
+          body: { email: e, code: letter.code },
+        });
+        expect(code(reused)).toBe('INVALID_CODE');
+      });
+
+      it('link: the token of the letter signs in once', async () => {
+        const e = `link-${randomUUID()}@test.local`;
+        await call('POST', '/api/v1/auth/code', { body: { email: e } });
+        const linkToken = decodeURIComponent(letterTo(e).link.split('#token=')[1] ?? '');
+        const ok = await call('POST', '/api/v1/auth/link/verify', { body: { token: linkToken } });
+        expect(ok.statusCode).toBe(200);
+        expect(body(ok)['user']).toMatchObject({ email: e });
+        const again = await call('POST', '/api/v1/auth/link/verify', {
+          body: { token: linkToken },
+        });
+        expect(code(again)).toBe('INVALID_CODE');
+      });
+
+      it('resend within the cooldown → 429 TOO_MANY_REQUESTS with Retry-After', async () => {
+        const e = `cool-${randomUUID()}@test.local`;
+        await call('POST', '/api/v1/auth/code', { body: { email: e } });
+        const res = await call('POST', '/api/v1/auth/code', { body: { email: e } });
+        expect(res.statusCode).toBe(429);
+        expect(code(res)).toBe('TOO_MANY_REQUESTS');
+        expect(Number(res.headers['retry-after'])).toBeGreaterThan(0);
+      });
+
+      it('bad input → 400: code not 6 digits, bad email, short link token', async () => {
+        const e = `bad-${randomUUID()}@test.local`;
+        const cases: [string, Json][] = [
+          ['/api/v1/auth/code/verify', { email: e, code: '12345' }],
+          ['/api/v1/auth/code', { email: 'not-an-email' }],
+          ['/api/v1/auth/link/verify', { token: 'short' }],
+        ];
+        for (const [url, payload] of cases) {
+          expect(code(await call('POST', url, { body: payload }))).toBe('VALIDATION_ERROR');
+        }
+      });
+
+      it('ADMIN_EMAIL signs in by code as the existing ADMIN', async () => {
+        const cookie = await signIn(TEST_ADMIN.email);
+        const me = await call('GET', '/api/v1/auth/me', { headers: { cookie } });
+        expect(body(me)).toMatchObject({ email: TEST_ADMIN.email, role: 'ADMIN' });
+      });
+
+      it('CSRF: a cookie mutation must prove same origin; a foreign Origin is always rejected', async () => {
+        const cookie = await signIn(`csrf-${randomUUID()}@test.local`);
+        const order = (headers: Record<string, string>): Promise<LightMyRequestResponse> =>
+          call('POST', '/api/v1/orders', {
+            body: { planId: 'monthly' },
+            headers: { cookie, 'idempotency-key': randomUUID(), ...headers },
+          });
+
+        const noProof = await order({});
+        expect(noProof.statusCode).toBe(403);
+        expect(code(noProof)).toBe('FORBIDDEN');
+        expect(code(await order({ origin: 'https://evil.example' }))).toBe('FORBIDDEN');
+        expect(code(await order({ 'sec-fetch-site': 'cross-site' }))).toBe('FORBIDDEN');
+        expect(code(await order({ origin: 'null' }))).toBe('FORBIDDEN');
+        // inject() sends Host: localhost:80 — an Origin with that host is the page's own origin.
+        expect((await order({ origin: 'http://localhost:80' })).statusCode).toBe(201);
+        expect((await order(SAME_ORIGIN)).statusCode).toBe(201);
+        // Reads need no proof; Bearer clients send no Origin and are not affected.
+        const read = await call('GET', '/api/v1/licenses', { headers: { cookie } });
+        expect(read.statusCode).toBe(200);
+        const bearer = await call('POST', '/api/v1/orders', {
+          token,
+          body: { planId: 'monthly' },
+          headers: { 'idempotency-key': randomUUID() },
+        });
+        expect(bearer.statusCode).toBe(201);
+        const forged = await call('POST', '/api/v1/orders', {
+          token,
+          body: { planId: 'monthly' },
+          headers: { 'idempotency-key': randomUUID(), origin: 'https://evil.example' },
+        });
+        expect(code(forged)).toBe('FORBIDDEN');
+      });
+
+      it('logout by cookie ends the session and clears the cookie', async () => {
+        const cookie = await signIn(`out-${randomUUID()}@test.local`);
+        const out = await call('POST', '/api/v1/auth/logout', {
+          headers: { cookie, ...SAME_ORIGIN },
+        });
+        expect(out.statusCode).toBe(204);
+        expect(out.cookies.find((c) => c.name === 'lch_session')?.value).toBe('');
+        const me = await call('GET', '/api/v1/auth/me', { headers: { cookie } });
+        expect(code(me)).toBe('UNAUTHENTICATED');
+      });
+
+      it('a code-only account cannot sign in with a password', async () => {
+        const e = `nopass-${randomUUID()}@test.local`;
+        await signIn(e);
+        const res = await call('POST', '/api/v1/auth/login', {
+          body: { email: e, password: 'whatever-password' },
+        });
+        expect(code(res)).toBe('INVALID_CREDENTIALS');
+      });
+    });
+
     describe('checkout (spec §4.5)', () => {
       it('order needs Idempotency-Key; replay returns the same order; other plan → 409', async () => {
         expect(

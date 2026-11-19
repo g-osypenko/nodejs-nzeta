@@ -12,6 +12,7 @@ export function testConfig(overrides: Record<string, string> = {}): AppConfig {
     ADMIN_EMAIL: TEST_ADMIN.email,
     ADMIN_PASSWORD: TEST_ADMIN.password,
     DEBUG_HEADERS: 'true',
+    MAILER: 'memory',
     ...overrides,
   });
 }
