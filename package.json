@@ -27,10 +27,15 @@
     "test:all": "npm run build && vitest run",
     "test:coverage": "vitest run --project unit --project integration --coverage",
     "test:mutation": "stryker run",
-    "db:seed": "tsx src/seed.ts"
+    "db:seed": "tsx src/seed.ts",
+    "web:install": "npm ci --prefix web",
+    "web:dev": "npm run dev --prefix web",
+    "web:build": "npm run build --prefix web",
+    "web:typecheck": "npm run typecheck --prefix web"
   },
   "dependencies": {
     "@fastify/cors": "^11.3.0",
+    "@fastify/static": "10.1.10",
     "dotenv": "^17.4.2",
     "fastify": "^5.12.7",
     "pino": "10.3.1",
@@ -49,6 +54,7 @@
     "@typescript-eslint/parser": "^8.70.0",
     "@vitest/coverage-v8": "4.1.12",
     "eslint": "^10.10.0",
+    "eslint-plugin-react-hooks": "7.1.1",
     "husky": "^9.1.7",
     "lint-staged": "^17.5.1",
     "prettier": "^3.9.7",

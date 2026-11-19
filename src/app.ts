@@ -21,6 +21,7 @@ import { createContext, runWithContext, type RequestContext } from './shared/con
 import { isDbUnavailable } from './shared/db/errors.js';
 import { AppError } from './shared/errors.js';
 import { logger } from './shared/logger.js';
+import { isSpaNavigation, registerWeb, sendSpaShell } from './web.js';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -153,7 +154,9 @@ export function buildApp(container: Container): App {
     return reply.status(mapped.status).send(body);
   });
 
+  const webDistDir = container.config.webDistDir;
   app.setNotFoundHandler((request, reply) => {
+    if (webDistDir !== null && isSpaNavigation(request)) return sendSpaShell(reply);
     const ctx = contextOf(request);
     return reply.status(404).send({
       error: {
@@ -170,6 +173,8 @@ export function buildApp(container: Container): App {
 
   app.get('/version', async () => ({ status: 'OK', commit: container.config.gitCommit }));
   app.get('/health', async () => ({ status: 'OK', db: await container.checkHealth() }));
+
+  if (webDistDir !== null) registerWeb(app, webDistDir);
 
   const { services } = container;
   void app.register(
