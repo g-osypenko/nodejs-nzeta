@@ -112,6 +112,8 @@ function main(): void {
         ...process.env,
         DATA_SOURCE: 'postgres',
         MAILER: 'console',
+        // Test code for every sign-in on localhost: 1111-1111.
+        DEV_LOGIN_CODE: process.env['DEV_LOGIN_CODE'] ?? '11111111',
         COOKIE_SECURE: 'false',
         APP_BASE_URL: SITE,
         DEBUG_HEADERS: 'true',

@@ -23,10 +23,21 @@ const EnvSchema = z
     COOKIE_SECURE: z.stringbool().default(true),
     MAILER: z.enum(['console', 'memory']).default('console'),
     LOGIN_CODE_TTL_MINUTES: z.coerce.number().int().positive().max(60).default(10),
+    // Development only: every sign-in code is this fixed value (e.g. 11111111 = "1111-1111").
+    DEV_LOGIN_CODE: z
+      .string()
+      .regex(/^\d{6,8}$/, 'DEV_LOGIN_CODE must be 6-8 digits')
+      .optional(),
+    NODE_ENV: z.string().optional(),
   })
   .refine((env) => env.DATA_SOURCE === 'memory' || env.DATABASE_URL !== undefined, {
     message: 'DATABASE_URL is required when DATA_SOURCE=postgres',
     path: ['DATABASE_URL'],
+  })
+  // A fixed sign-in code is a skeleton key: it must never reach a production process.
+  .refine((env) => env.DEV_LOGIN_CODE === undefined || env.NODE_ENV !== 'production', {
+    message: 'DEV_LOGIN_CODE is not allowed when NODE_ENV=production',
+    path: ['DEV_LOGIN_CODE'],
   });
 
 export interface AppConfig {
@@ -57,6 +68,8 @@ export interface AppConfig {
   /** console = letter in the log (development); memory = in-process outbox (tests, smoke). */
   mailer: 'console' | 'memory';
   loginCodeTtlMinutes: number;
+  /** Development only: the fixed value of every sign-in code; `null` = random codes. */
+  devLoginCode: string | null;
 }
 
 /** Validates the environment once at startup; an invalid env fails the process immediately. */
@@ -85,5 +98,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     cookieSecure: e.COOKIE_SECURE,
     mailer: e.MAILER,
     loginCodeTtlMinutes: e.LOGIN_CODE_TTL_MINUTES,
+    devLoginCode: e.DEV_LOGIN_CODE ?? null,
   };
 }

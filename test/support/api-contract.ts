@@ -211,6 +211,16 @@ export function describeApiContract(label: string, start: () => Promise<TestApp>
         expect(code(again)).toBe('INVALID_CODE');
       });
 
+      it('spaces and dashes in the typed code are ignored ("123-456")', async () => {
+        const e = `dash-${randomUUID()}@test.local`;
+        await call('POST', '/api/v1/auth/code', { body: { email: e } });
+        const { code: c } = letterTo(e);
+        const res = await call('POST', '/api/v1/auth/code/verify', {
+          body: { email: e, code: ` ${c.slice(0, 3)}-${c.slice(3)} ` },
+        });
+        expect(res.statusCode).toBe(200);
+      });
+
       it('resend within the cooldown → 429 TOO_MANY_REQUESTS with Retry-After', async () => {
         const e = `cool-${randomUUID()}@test.local`;
         await call('POST', '/api/v1/auth/code', { body: { email: e } });

@@ -84,6 +84,23 @@ describe('config (env validation, fail fast)', () => {
     ).toThrow(/PORT: .+; WEBHOOK_SECRET: WEBHOOK_SECRET must be at least 16 chars/);
   });
 
+  it('DEV_LOGIN_CODE: off by default, 6-8 digits, refused when NODE_ENV=production', () => {
+    expect(loadConfig({ ...base, DATA_SOURCE: 'memory' }).devLoginCode).toBeNull();
+    const dev = loadConfig({ ...base, DATA_SOURCE: 'memory', DEV_LOGIN_CODE: '11111111' });
+    expect(dev.devLoginCode).toBe('11111111');
+    expect(() =>
+      loadConfig({ ...base, DATA_SOURCE: 'memory', DEV_LOGIN_CODE: '1111-1111' }),
+    ).toThrow(/DEV_LOGIN_CODE must be 6-8 digits/);
+    expect(() =>
+      loadConfig({
+        ...base,
+        DATA_SOURCE: 'memory',
+        DEV_LOGIN_CODE: '11111111',
+        NODE_ENV: 'production',
+      }),
+    ).toThrow(/DEV_LOGIN_CODE is not allowed when NODE_ENV=production/);
+  });
+
   it('parses numbers and booleans from strings', () => {
     const c = loadConfig({ ...base, DATA_SOURCE: 'memory', PORT: '8080', DEBUG_HEADERS: 'true' });
     expect(c.port).toBe(8080);
