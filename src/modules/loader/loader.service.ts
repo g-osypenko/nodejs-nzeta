@@ -37,7 +37,7 @@ export function createLoaderService({ repo }: { repo: LoaderRepository }): Loade
         assertUsable(license, now);
       }
 
-      if (license.hwid !== hwid) {
+      if (license.hwid !== hwid && license.status !== 'ACTIVE') {
         logger.warn({ licenseKey }, 'hwid mismatch');
         throw new AppError('HWID_MISMATCH', 'License is bound to another device');
       }
