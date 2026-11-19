@@ -1,6 +1,7 @@
 import type {
   ConfigRow,
   LicenseRow,
+  LoginChallengeRow,
   OrderRow,
   PaymentEventRow,
   PlanRow,
@@ -16,6 +17,7 @@ import type {
 export interface MemoryStore {
   users: Map<string, UserRow>;
   sessions: Map<string, SessionRow>;
+  loginChallenges: Map<string, LoginChallengeRow>;
   plans: Map<string, PlanRow>;
   orders: Map<string, OrderRow>;
   paymentEvents: Map<string, PaymentEventRow>;
@@ -34,6 +36,7 @@ export function createMemoryStore(): MemoryStore {
   return {
     users: new Map(),
     sessions: new Map(),
+    loginChallenges: new Map(),
     plans: new Map(PLANS.map((p) => [p.id, p])),
     orders: new Map(),
     paymentEvents: new Map(),

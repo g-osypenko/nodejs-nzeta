@@ -13,7 +13,8 @@ export type JsonObject = { [key: string]: JsonValue };
 export interface UserRow {
   id: string;
   email: string;
-  passwordHash: string;
+  /** `null` for accounts created by a sign-in code (migrations/002, ADR 0011). */
+  passwordHash: string | null;
   role: UserRole;
   createdAt: Date;
 }
@@ -22,6 +23,17 @@ export interface SessionRow {
   tokenHash: string;
   userId: string;
   expiresAt: Date;
+}
+
+export interface LoginChallengeRow {
+  id: string;
+  email: string;
+  codeHash: string;
+  tokenHash: string;
+  attempts: number;
+  expiresAt: Date;
+  consumedAt: Date | null;
+  createdAt: Date;
 }
 
 export interface PlanRow {

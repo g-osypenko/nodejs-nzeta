@@ -18,6 +18,14 @@ const EnvSchema = z
     DEBUG_RUNTIME: z.stringbool().default(false),
     AUTH_HASH_CONCURRENCY: z.coerce.number().int().positive().default(1),
     AUTH_HASH_QUEUE: z.coerce.number().int().min(0).default(8),
+    // Passwordless sign-in and cookie session (ADR 0011)
+    APP_BASE_URL: z
+      .url()
+      .transform((u) => u.replace(/\/+$/, ''))
+      .optional(),
+    COOKIE_SECURE: z.stringbool().default(true),
+    MAILER: z.enum(['console', 'memory']).default('console'),
+    LOGIN_CODE_TTL_MINUTES: z.coerce.number().int().positive().max(60).default(10),
   })
   .refine((env) => env.DATA_SOURCE === 'memory' || env.DATABASE_URL !== undefined, {
     message: 'DATABASE_URL is required when DATA_SOURCE=postgres',
@@ -43,6 +51,16 @@ export interface AppConfig {
   debugRuntime: boolean;
   /** Admission control of password hashing (spec.md §9, ADR 0010). */
   authHashing: { maxConcurrent: number; maxQueued: number };
+  /**
+   * Public origin of the site, e.g. https://nodejs-nzeta.onrender.com: links in sign-in emails and
+   * the Origin that cookie-authenticated mutations must come from (CSRF). `null` = the request host.
+   */
+  appBaseUrl: string | null;
+  /** `Secure` flag of the session cookie; false only for plain-http local development. */
+  cookieSecure: boolean;
+  /** console = letter in the log (development); memory = in-process outbox (tests, smoke). */
+  mailer: 'console' | 'memory';
+  loginCodeTtlMinutes: number;
 }
 
 /** Validates the environment once at startup; an invalid env fails the process immediately. */
@@ -68,5 +86,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     webDistDir: e.WEB_DIST_DIR ?? null,
     debugRuntime: e.DEBUG_RUNTIME,
     authHashing: { maxConcurrent: e.AUTH_HASH_CONCURRENCY, maxQueued: e.AUTH_HASH_QUEUE },
+    appBaseUrl: e.APP_BASE_URL ?? null,
+    cookieSecure: e.COOKIE_SECURE,
+    mailer: e.MAILER,
+    loginCodeTtlMinutes: e.LOGIN_CODE_TTL_MINUTES,
   };
 }

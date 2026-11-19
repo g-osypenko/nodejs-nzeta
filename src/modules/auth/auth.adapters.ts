@@ -1,10 +1,15 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomInt } from 'node:crypto';
 import {
   AuthError,
   createAuthService,
+  createCodeLoginService,
   createPasswordHasher,
   type AuthService,
   type AuthStore,
+  type CodeGenerator,
+  type CodeLoginService,
+  type LoginCodeStore,
+  type Mailer,
   type HashingLimits,
   type PasswordHasher,
   type PasswordKdf,
@@ -28,6 +33,40 @@ export const sessionTokens: SessionTokens = {
   generate: () => randomBytes(32).toString('base64url'),
   digest: (token) => createHash('sha256').update(token).digest('hex'),
 };
+
+/** Uniform 000000–999999 from the CSPRNG (randomInt has no modulo bias). */
+export const sixDigitCodes: CodeGenerator = {
+  generate: () => randomInt(0, 1_000_000).toString().padStart(6, '0'),
+};
+
+/** Limits of ADR 0011: ≤ 5 guesses per code, ≤ 5 codes per hour, one email a minute. */
+export const LOGIN_CODE_LIMITS = {
+  maxAttempts: 5,
+  resendCooldownMs: 60_000,
+  maxPerHour: 5,
+} as const;
+
+export function createAppCodeLogin(deps: {
+  users: AuthStore;
+  codes: LoginCodeStore;
+  mailer: Mailer;
+  sessionTtlHours: number;
+  codeTtlMinutes: number;
+  adminEmail: string;
+}): CodeLoginService {
+  return createCodeLoginService({
+    users: deps.users,
+    codes: deps.codes,
+    mailer: deps.mailer,
+    codeGenerator: sixDigitCodes,
+    clock: { now: () => new Date() },
+    tokens: sessionTokens,
+    logger,
+    sessionTtlMs: deps.sessionTtlHours * 3_600_000,
+    policy: { ttlMs: deps.codeTtlMinutes * 60_000, ...LOGIN_CODE_LIMITS },
+    adminEmails: [deps.adminEmail],
+  });
+}
 
 export interface AppAuth {
   service: AuthService;
@@ -59,6 +98,8 @@ export function toAppError(error: AuthError): AppError {
       return new AppError('NOT_FOUND', 'User not found');
     case 'AUTH_BUSY':
       return new AppError('AUTH_BUSY', error.message);
+    case 'TOO_MANY_REQUESTS':
+      return new AppError('TOO_MANY_REQUESTS', error.message, undefined, error.retryAfterSeconds);
     default:
       return new AppError(error.code, error.message);
   }
