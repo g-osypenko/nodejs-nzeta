@@ -41,6 +41,31 @@ describe('logger wiring', () => {
     expect(lines[0]).not.toHaveProperty('processId');
   });
 
+  it('bound SQL values of a driver error never reach the log; the query text does', () => {
+    // Shape of a `postgres` PostgresError: the INSERT of the admin bootstrap leaked the email and
+    // the password hash to the Render log before this redaction (2026-11-19).
+    const dbError = Object.assign(new Error('relation "users" does not exist'), {
+      code: '42P01',
+      query: 'INSERT INTO users (email, password_hash, role) VALUES ($1, $2, $3)',
+      parameters: ['admin@test.local', 'scrypt$secret-hash', 'ADMIN'],
+      args: ['admin@test.local', 'scrypt$secret-hash', 'ADMIN'],
+    });
+    const { lines, stream } = capture();
+    const log = createLogger(stream, 'info');
+    log.error({ err: dbError }, 'request failed');
+    log.fatal({ err: new Error('startup failed', { cause: dbError }) }, 'startup failed');
+
+    const text = JSON.stringify(lines);
+    expect(text).not.toContain('scrypt$secret-hash');
+    expect(text).not.toContain('admin@test.local');
+    expect(lines[0]?.['err']).toMatchObject({
+      code: '42P01',
+      query: 'INSERT INTO users (email, password_hash, role) VALUES ($1, $2, $3)',
+      parameters: '[redacted]',
+      args: '[redacted]',
+    });
+  });
+
   it('level defaults to info and follows LOG_LEVEL', () => {
     delete process.env['LOG_LEVEL'];
     const a = capture();
