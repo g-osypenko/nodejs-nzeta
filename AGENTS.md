@@ -129,6 +129,7 @@ src/
 - Conventional Commits: `feat|fix|refactor|chore|docs|test(scope): ...`. Коміти, зроблені з AI, мають трейлер `Co-Authored-By`.
 - Хуки не обходити (`--no-verify` заборонено). Pre-commit: lint-staged + typecheck. Commit-msg: commitlint (заголовок ≤ 100 символів, тема з малої літери). Pre-push: build + smoke.
 - Перед звітом користувачу: `npm run check && npm run build && npm run smoke`.
+- Продуктовий трек, ручна перевірка: `npm run local` (БД + API + сайт на http://localhost:5173), код входу — у терміналі; оплата — `npm run dev:pay -- <orderId>`.
 - Атомарні кроки, кожен з окремим комітом. Не робити великих сліпих генерацій.
 
 ## 6. Слід роботи з AI (`ai/`) — обов'язково

@@ -42,23 +42,33 @@ migrations/            # SQL-міграції
 
 ---
 
-## 🚀 Швидкий старт
+## 🚀 Швидкий старт: усе на localhost однією командою
+
+Потрібні Node 22 і запущений Docker Desktop.
 
 ```bash
-npm install
+npm install && npm run web:install
 cp .env.example .env
-
-# PostgreSQL у Docker (порт 55432)
-npm run db:up && npm run db:migrate
-npm run dev
-
-# без БД: у .env поставте DATA_SOURCE=memory (статичні дані в пам'яті)
-
-# фронтенд (React + Vite, ADR 0008) — у другому терміналі → http://localhost:5173
-npm run web:install && npm run web:dev
+npm run local
 ```
 
-Вхід — лише кодом з пошти ([ADR 0011](./docs/adr/0011-passwordless-email-code-and-cookie-session.md)); поки немає домену, лист пишеться в лог сервера (`MAILER=console`). Адмін — акаунт `ADMIN_EMAIL` з роллю ADMIN: створюється на старті й входить кодом. За замовчуванням сервер слухає `127.0.0.1:3000`; у контейнері задайте `HOST=0.0.0.0`.
+`npm run local` ([`scripts/dev.ts`](./scripts/dev.ts)) робить усе сам:
+
+| Що                                                  | Де                        |
+| :-------------------------------------------------- | :------------------------ |
+| Postgres у Docker + нові міграції                   | `127.0.0.1:55432`         |
+| API з автоперезапуском при зміні коду (`tsx watch`) | http://127.0.0.1:3000     |
+| Сайт з гарячим оновленням (Vite)                    | **http://localhost:5173** |
+
+- **Вхід** — лише кодом з пошти ([ADR 0011](./docs/adr/0011-passwordless-email-code-and-cookie-session.md)). Справжні листи поки не надсилаються: лист з **кодом і посиланням** з'являється рамкою в терміналі `npm run local`.
+- **Адмін** — акаунт `ADMIN_EMAIL` з `.env` з роллю ADMIN; входить кодом, як усі.
+- **Оплата без провайдера:** створіть замовлення на сайті й виконайте `npm run dev:pay -- <id замовлення>` → замовлення `PAID`, ліцензія з'являється в «Мої ліцензії».
+- **Логи** виводяться читабельно: кожен запит — метод, шлях, статус, час і кількість SQL-запитів.
+- **Ctrl+C** зупиняє API і сайт; база лишається працювати (`npm run db:down` — зупинити, `npm run db:reset` — почати з порожньої).
+- Демо-дані: `npm run db:seed` (20 користувачів, 200 ліцензій).
+- У Claude Desktop сайт можна відкрити в панелі браузера: конфігурація `local` у [`.claude/launch.json`](./.claude/launch.json).
+
+Без Docker: `DATA_SOURCE=memory npm run dev` + `npm run web:dev` (дані в пам'яті, зникають при перезапуску).
 
 ---
 
