@@ -9,6 +9,17 @@ export function contextFields(): Record<string, string | undefined> {
 }
 
 /**
+ * Errors of the `postgres` driver carry the bound values of the failed query (`parameters`,
+ * `args`): emails, password hashes, license keys. pino's error serializer copies every own field,
+ * so they would reach the log. The query text stays — it has placeholders only and helps debugging.
+ * Wrapped errors (`new Error(msg, { cause })`) are covered one level deep.
+ */
+export const REDACT = {
+  paths: ['err.parameters', 'err.args', 'err.cause.parameters', 'err.cause.args'],
+  censor: '[redacted]',
+};
+
+/**
  * Builds a logger whose `mixin` pulls reqId / processId / userId from AsyncLocalStorage on every
  * call, so services and repositories log with full correlation without receiving any parameters.
  * `destination` exists for tests (default: stdout).
@@ -17,7 +28,7 @@ export function createLogger(
   destination?: DestinationStream,
   level: string = process.env['LOG_LEVEL'] ?? 'info',
 ): Logger {
-  const options = { level, mixin: contextFields };
+  const options = { level, mixin: contextFields, redact: REDACT };
   return destination ? pino(options, destination) : pino(options);
 }
 
