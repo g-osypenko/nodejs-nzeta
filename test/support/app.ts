@@ -3,14 +3,13 @@ import { createContainer, type Container } from '../../src/container.js';
 import { loadConfig, type AppConfig } from '../../src/shared/config.js';
 
 export const TEST_WEBHOOK_SECRET = 'test-webhook-secret-000001';
-export const TEST_ADMIN = { email: 'admin@test.local', password: 'admin-password-01' };
+export const TEST_ADMIN = { email: 'admin@test.local' };
 
 export function testConfig(overrides: Record<string, string> = {}): AppConfig {
   return loadConfig({
     DATA_SOURCE: 'memory',
     WEBHOOK_SECRET: TEST_WEBHOOK_SECRET,
     ADMIN_EMAIL: TEST_ADMIN.email,
-    ADMIN_PASSWORD: TEST_ADMIN.password,
     DEBUG_HEADERS: 'true',
     MAILER: 'memory',
     ...overrides,

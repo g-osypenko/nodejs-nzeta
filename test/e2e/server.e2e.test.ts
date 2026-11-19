@@ -9,7 +9,7 @@ import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest';
  * driven over real TCP with fetch. Run via `npm run test:e2e` (builds first).
  */
 const SECRET = 'e2e-webhook-secret-000001';
-const ADMIN = { email: 'admin@e2e.local', password: 'admin-password-e2e' };
+const ADMIN_EMAIL = 'admin@e2e.local';
 
 function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -82,8 +82,8 @@ describe('e2e: built server process + Postgres over HTTP', () => {
       PORT: String(port),
       HOST: '127.0.0.1',
       WEBHOOK_SECRET: SECRET,
-      ADMIN_EMAIL: ADMIN.email,
-      ADMIN_PASSWORD: ADMIN.password,
+      ADMIN_EMAIL,
+      MAILER: 'console',
       GIT_COMMIT: 'e2e-sha',
     });
     await waitForHealth(base);
@@ -103,7 +103,10 @@ describe('e2e: built server process + Postgres over HTTP', () => {
       method,
       headers: {
         ...(opts.body === undefined ? {} : { 'content-type': 'application/json' }),
-        ...(opts.token ? { authorization: `Bearer ${opts.token}` } : {}),
+        // Session cookie as a browser sends it; a same-origin fetch also says so (CSRF guard).
+        ...(opts.token
+          ? { cookie: `lch_session=${opts.token}`, 'sec-fetch-site': 'same-origin' }
+          : {}),
         ...opts.headers,
       },
       ...(opts.body === undefined ? {} : { body: JSON.stringify(opts.body) }),
@@ -116,20 +119,32 @@ describe('e2e: built server process + Postgres over HTTP', () => {
     };
   };
 
+  /** Sign-in by code: the console mailer writes the letter to the log of the process (ADR 0011). */
+  const signIn = async (email: string): Promise<string> => {
+    expect((await api('POST', '/api/v1/auth/code', { body: { email } })).status).toBe(202);
+    let code: unknown;
+    for (let i = 0; i < 50 && code === undefined; i += 1) {
+      code = server.logs.filter((l) => l['mailTo'] === email).at(-1)?.['code'];
+      if (code === undefined) await new Promise((r) => setTimeout(r, 50)); // stdout flush
+    }
+    const res = await fetch(`${base}/api/v1/auth/code/verify`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email, code }),
+    });
+    expect(res.status).toBe(200);
+    const cookie = res.headers.getSetCookie().find((c) => c.startsWith('lch_session='));
+    expect(cookie).toMatch(/HttpOnly/i);
+    return cookie?.split(';')[0]?.slice('lch_session='.length) ?? '';
+  };
+
   it('GET /version reports the deployed commit', async () => {
     expect((await api('GET', '/version')).body).toEqual({ status: 'OK', commit: 'e2e-sha' });
   });
 
-  it('customer journey: register → buy → pay → get key → loader BOUND/AUTHENTICATED → sync config', async () => {
+  it('customer journey: sign in by code → buy → pay → get key → loader BOUND/AUTHENTICATED → sync config', async () => {
     const email = `e2e-${randomUUID()}@test.local`;
-    const password = 'e2e-password-01';
-    expect((await api('POST', '/api/v1/auth/register', { body: { email, password } })).status).toBe(
-      201,
-    );
-    const { token } = (await api('POST', '/api/v1/auth/login', { body: { email, password } }))
-      .body as {
-      token: string;
-    };
+    const token = await signIn(email);
 
     const plans = await fetch(`${base}/api/v1/plans`).then(
       (r) => r.json() as Promise<{ id: string }[]>,
@@ -176,12 +191,7 @@ describe('e2e: built server process + Postgres over HTTP', () => {
 
   it('every log line of the checkout process carries its processId, across requests and layers (spec §4.3)', async () => {
     const email = `e2e-log-${randomUUID()}@test.local`;
-    const password = 'e2e-password-02';
-    await api('POST', '/api/v1/auth/register', { body: { email, password } });
-    const { token } = (await api('POST', '/api/v1/auth/login', { body: { email, password } }))
-      .body as {
-      token: string;
-    };
+    const token = await signIn(email);
     const order = await api('POST', '/api/v1/orders', {
       token,
       body: { planId: 'monthly' },
@@ -220,8 +230,7 @@ describe('e2e: process-level failure behaviour', () => {
       DATABASE_URL: 'postgres://x:y@127.0.0.1:1/none',
       PORT: String(port),
       WEBHOOK_SECRET: SECRET,
-      ADMIN_EMAIL: ADMIN.email,
-      ADMIN_PASSWORD: ADMIN.password,
+      ADMIN_EMAIL,
     });
     expect(await server.exited).toBe(1);
     expect(Date.now() - started).toBeLessThan(10_000);
@@ -235,7 +244,6 @@ describe('e2e: process-level failure behaviour', () => {
       DATABASE_URL: 'postgres://x',
       WEBHOOK_SECRET: 'short',
       ADMIN_EMAIL: 'bad',
-      ADMIN_PASSWORD: 'p',
     });
     expect(await server.exited).toBe(1);
     expect(JSON.stringify(server.logs)).toContain('Invalid environment configuration');

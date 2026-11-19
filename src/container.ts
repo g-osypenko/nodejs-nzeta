@@ -10,8 +10,8 @@ import {
   createPostgresAuthRepository,
   createPostgresLoginCodeRepository,
 } from './modules/auth/auth.repository.postgres.js';
-import type { AuthService, CodeLoginService, Mailer } from '@lch/auth-core';
-import { createAppAuth, createAppCodeLogin } from './modules/auth/auth.adapters.js';
+import type { AuthService, Mailer } from '@lch/auth-core';
+import { createAppAuth } from './modules/auth/auth.adapters.js';
 import {
   createConsoleMailer,
   createMemoryMailer,
@@ -43,7 +43,6 @@ export interface Repositories {
 
 export interface Services {
   auth: AuthService;
-  codeLogin: CodeLoginService;
   licenses: LicensesService;
   configs: ConfigsService;
   loader: LoaderService;
@@ -135,16 +134,10 @@ export async function createContainer(config: AppConfig): Promise<Container> {
   const services: Services = {
     auth: createAppAuth({
       store: repos.auth,
-      sessionTtlHours: config.sessionTtlHours,
-      hashing: config.authHashing,
-    }).service,
-    codeLogin: createAppCodeLogin({
-      users: repos.auth,
       codes: repos.loginCodes,
       mailer,
       sessionTtlHours: config.sessionTtlHours,
       codeTtlMinutes: config.loginCodeTtlMinutes,
-      adminEmail: config.admin.email,
     }),
     licenses: createLicensesService({
       repo: repos.licenses,
@@ -154,7 +147,8 @@ export async function createContainer(config: AppConfig): Promise<Container> {
     loader: createLoaderService({ repo: repos.loader }),
   };
 
-  await services.auth.ensureAdmin(config.admin.email, config.admin.password);
+  // The admin has no password either: the account exists with role ADMIN and signs in by code.
+  await services.auth.ensureAdmin(config.adminEmail);
 
   return { config, services, outbox, checkHealth: data.checkHealth, close: data.close };
 }

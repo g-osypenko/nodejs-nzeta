@@ -169,11 +169,10 @@ export function buildApp(container: Container): App {
       requestId: ctx.requestId,
       processId: ctx.processId,
     };
-    // AUTH_BUSY: a hashing slot frees in tens of milliseconds; the DB may need longer.
+    // 429: the limit says when; 503 DB_UNAVAILABLE: give the database a few seconds.
     if (mapped.retryAfterSeconds !== undefined)
       void reply.header('retry-after', String(mapped.retryAfterSeconds));
-    else if (mapped.status === 503)
-      void reply.header('retry-after', mapped.code === 'AUTH_BUSY' ? '1' : '5');
+    else if (mapped.status === 503) void reply.header('retry-after', '5');
     return reply.status(mapped.status).send(body);
   });
 
@@ -209,9 +208,7 @@ export function buildApp(container: Container): App {
   const { services } = container;
   void app.register(
     async (api) => {
-      await api.register(
-        authRoutes(services.auth, services.codeLogin, { secure: container.config.cookieSecure }),
-      );
+      await api.register(authRoutes(services.auth, { secure: container.config.cookieSecure }));
       await api.register(licensesRoutes(services.licenses));
       await api.register(configsRoutes(services.configs));
       await api.register(loaderRoutes(services.loader));

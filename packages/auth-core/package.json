@@ -1,7 +1,7 @@
 {
   "name": "@lch/auth-core",
   "version": "0.1.0",
-  "description": "Registration, sign-in and sessions with admission-controlled password hashing; all resources injected",
+  "description": "Passwordless sign-in by emailed code or link, and sessions; all resources injected",
   "private": true,
   "type": "module",
   "sideEffects": false,

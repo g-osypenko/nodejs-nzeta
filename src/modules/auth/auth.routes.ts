@@ -4,13 +4,12 @@ import type {
   FastifyRequest,
   onRequestHookHandler,
 } from 'fastify';
-import type { AuthService, CodeLoginService, IssuedSession } from '@lch/auth-core';
+import type { AuthService, IssuedSession } from '@lch/auth-core';
 import { setCurrentUser } from '../../shared/context.js';
 import { AppError } from '../../shared/errors.js';
 import {
   CodeRequestBody,
   CodeVerifyBody,
-  CredentialsBody,
   LinkVerifyBody,
   toUserDto,
   type UserDto,
@@ -20,13 +19,6 @@ import {
 export const SESSION_COOKIE = 'lch_session';
 
 const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
-
-function bearerToken(request: FastifyRequest): string | null {
-  const header = request.headers.authorization;
-  if (!header?.startsWith('Bearer ')) return null;
-  const token = header.slice('Bearer '.length).trim();
-  return token.length > 0 ? token : null;
-}
 
 export interface AuthTransportOptions {
   /** Origin cookie-authenticated mutations must come from; `null` = the request's own host. */
@@ -50,8 +42,7 @@ function originAllowed(origin: string, request: FastifyRequest, allowed: string 
  * CSRF guard (ADR 0011, OWASP "verify origin with standard headers"):
  *  - a mutation that names a foreign Origin is rejected, whatever it authenticates with;
  *  - a mutation authenticated by the cookie must prove it is same-origin (Origin or Sec-Fetch-Site).
- * Bearer clients (scripts, the loader) send no Origin and are not affected: browsers never attach
- * an Authorization header on their own.
+ * Service calls without a session and without an Origin (the loader, the payment webhook) pass.
  */
 function assertSameOrigin(
   request: FastifyRequest,
@@ -69,19 +60,14 @@ function assertSameOrigin(
   }
 }
 
-/**
- * Transport-level authentication: a Bearer token (service clients) or the session cookie
- * (browser), resolved to the user of the request context.
- */
+/** Transport-level authentication: the session cookie, resolved to the user of the request context. */
 export function createAuthHook(
   auth: AuthService,
   opts: AuthTransportOptions,
 ): onRequestHookHandler {
   return async (request) => {
-    const bearer = bearerToken(request);
-    const cookie = bearer === null ? opts.sessionCookie(request) : null;
-    assertSameOrigin(request, cookie !== null, opts.allowedOrigin);
-    const token = bearer ?? cookie;
+    const token = opts.sessionCookie(request);
+    assertSameOrigin(request, token !== null, opts.allowedOrigin);
     if (!token) return;
     const user = await auth.authenticate(token);
     if (user) setCurrentUser(user);
@@ -97,11 +83,7 @@ interface SignedIn {
   expiresAt: string;
 }
 
-export function authRoutes(
-  auth: AuthService,
-  codeLogin: CodeLoginService,
-  cookie: CookieSettings,
-): FastifyPluginAsync {
+export function authRoutes(auth: AuthService, cookie: CookieSettings): FastifyPluginAsync {
   const startSession = (reply: FastifyReply, session: IssuedSession): SignedIn => {
     void reply.setCookie(SESSION_COOKIE, session.token, {
       path: '/',
@@ -114,37 +96,25 @@ export function authRoutes(
   };
 
   return async (app) => {
-    // --- passwordless sign-in (ADR 0011) ------------------------------------
+    // Passwordless sign-in (ADR 0011): the first sign-in of an email creates the account.
     app.post('/auth/code', async (request, reply) => {
       const { email } = CodeRequestBody.parse(request.body);
-      const { expiresAt } = await codeLogin.requestCode(email);
+      const { expiresAt } = await auth.requestCode(email);
       return reply.code(202).send({ expiresAt: expiresAt.toISOString() });
     });
 
     app.post('/auth/code/verify', async (request, reply) => {
       const { email, code } = CodeVerifyBody.parse(request.body);
-      return startSession(reply, await codeLogin.verifyCode(email, code));
+      return startSession(reply, await auth.verifyCode(email, code));
     });
 
     app.post('/auth/link/verify', async (request, reply) => {
       const { token } = LinkVerifyBody.parse(request.body);
-      return startSession(reply, await codeLogin.verifyLink(token));
-    });
-
-    // --- password sign-in: service clients until passwords are dropped -------
-    app.post('/auth/register', async (request, reply) => {
-      const user = await auth.register(CredentialsBody.parse(request.body));
-      return reply.code(201).send(toUserDto(user));
-    });
-
-    app.post('/auth/login', async (request) => {
-      const session = await auth.login(CredentialsBody.parse(request.body));
-      return { token: session.token, expiresAt: session.expiresAt.toISOString() };
+      return startSession(reply, await auth.verifyLink(token));
     });
 
     app.post('/auth/logout', async (request, reply) => {
-      const token = bearerToken(request) ?? request.cookies[SESSION_COOKIE] ?? '';
-      await auth.logout(token);
+      await auth.logout(request.cookies[SESSION_COOKIE] ?? '');
       void reply.clearCookie(SESSION_COOKIE, { path: '/' });
       return reply.code(204).send();
     });

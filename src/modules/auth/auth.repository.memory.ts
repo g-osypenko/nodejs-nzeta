@@ -2,29 +2,23 @@ import { randomUUID } from 'node:crypto';
 import type { AuthUser } from '../../shared/context.js';
 import type { MemoryStore } from '../../shared/db/memory-store.js';
 import type { LoginChallengeRow, UserRow } from '../../shared/db/rows.js';
-import { AppError } from '../../shared/errors.js';
-import type { AuthRepository, LoginCodeRepository, NewUser } from './auth.repository.js';
+import type { AuthRepository, LoginCodeRepository } from './auth.repository.js';
 
 export function createMemoryAuthRepository(store: MemoryStore): AuthRepository {
-  const byEmail = (email: string): UserRow | undefined =>
-    [...store.users.values()].find((u) => u.email === email);
-
-  const insert = (user: NewUser): UserRow => {
-    const row: UserRow = { id: randomUUID(), createdAt: new Date(), ...user };
-    store.users.set(row.id, row);
-    return row;
-  };
-
   const repository: AuthRepository = {
-    async createUser(user) {
-      if (byEmail(user.email)) throw new AppError('EMAIL_TAKEN', 'Email is already registered');
-      return insert(user);
-    },
-    async ensureUser(user) {
-      if (!byEmail(user.email)) insert(user);
-    },
-    async findUserByEmail(email) {
-      return byEmail(email) ?? null;
+    async ensureUserByEmail(email, role) {
+      // Same as INSERT … ON CONFLICT (email) DO NOTHING: an existing account is kept as is.
+      const existing = [...store.users.values()].find((u) => u.email === email);
+      if (existing) return existing;
+      const row: UserRow = {
+        id: randomUUID(),
+        email,
+        passwordHash: null,
+        role,
+        createdAt: new Date(),
+      };
+      store.users.set(row.id, row);
+      return row;
     },
     async findUserById(id) {
       return store.users.get(id) ?? null;
@@ -110,20 +104,6 @@ export function createMemoryLoginCodeRepository(store: MemoryStore): LoginCodeRe
         }
       }
       return null;
-    },
-
-    async ensureUserByEmail(email, role) {
-      const existing = [...store.users.values()].find((u) => u.email === email);
-      if (existing) return existing;
-      const row: UserRow = {
-        id: randomUUID(),
-        email,
-        passwordHash: null,
-        role,
-        createdAt: new Date(),
-      };
-      store.users.set(row.id, row);
-      return row;
     },
   };
   return repository;

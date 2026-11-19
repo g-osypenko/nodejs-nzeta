@@ -117,8 +117,9 @@ async function main(): Promise<void> {
           ),
       },
       {
-        name: 'auth.findUserByEmail (login)',
-        call: (sql) => createPostgresAuthRepository(sql).findUserByEmail('seed-1500@lch.local'),
+        name: 'auth.ensureUserByEmail (вхід кодом, акаунт уже є)',
+        call: (sql) =>
+          createPostgresAuthRepository(sql).ensureUserByEmail('seed-1500@lch.local', 'USER'),
       },
       {
         name: 'licenses.listUserLicenses (мої ліцензії)',

@@ -2,31 +2,21 @@ import { createHash, randomBytes, randomInt } from 'node:crypto';
 import {
   AuthError,
   createAuthService,
-  createCodeLoginService,
-  createPasswordHasher,
   type AuthService,
   type AuthStore,
   type CodeGenerator,
-  type CodeLoginService,
   type LoginCodeStore,
   type Mailer,
-  type HashingLimits,
-  type PasswordHasher,
-  type PasswordKdf,
   type SessionTokens,
 } from '@lch/auth-core';
 import { getContext } from '../../shared/context.js';
 import { AppError } from '../../shared/errors.js';
 import { logger } from '../../shared/logger.js';
-import { hashPassword, verifyPassword } from './password.js';
 
 /**
- * The host side of @lch/auth-core (ADR 0010): concrete implementations of the package's ports and
- * the mapping of its errors to spec.md §3. The package itself knows none of this.
+ * The host side of @lch/auth-core (ADR 0010, ADR 0011): concrete implementations of the package's
+ * ports and the mapping of its errors to the API error codes. The package itself knows none of this.
  */
-
-/** scrypt (node:crypto) — see password.ts for the parameters and the encoded format. */
-export const scryptKdf: PasswordKdf = { hash: hashPassword, verify: verifyPassword };
 
 /** 32 random bytes as base64url; only the SHA-256 is stored, so a DB leak leaks no live session. */
 export const sessionTokens: SessionTokens = {
@@ -46,58 +36,32 @@ export const LOGIN_CODE_LIMITS = {
   maxPerHour: 5,
 } as const;
 
-export function createAppCodeLogin(deps: {
-  users: AuthStore;
+export function createAppAuth(deps: {
+  store: AuthStore;
   codes: LoginCodeStore;
   mailer: Mailer;
   sessionTtlHours: number;
   codeTtlMinutes: number;
-  adminEmail: string;
-}): CodeLoginService {
-  return createCodeLoginService({
-    users: deps.users,
+}): AuthService {
+  return createAuthService({
+    store: deps.store,
     codes: deps.codes,
     mailer: deps.mailer,
     codeGenerator: sixDigitCodes,
     clock: { now: () => new Date() },
     tokens: sessionTokens,
-    logger,
-    sessionTtlMs: deps.sessionTtlHours * 3_600_000,
-    policy: { ttlMs: deps.codeTtlMinutes * 60_000, ...LOGIN_CODE_LIMITS },
-    adminEmails: [deps.adminEmail],
-  });
-}
-
-export interface AppAuth {
-  service: AuthService;
-  hasher: PasswordHasher;
-}
-
-export function createAppAuth(deps: {
-  store: AuthStore;
-  sessionTtlHours: number;
-  hashing: HashingLimits;
-}): AppAuth {
-  const hasher = createPasswordHasher(scryptKdf, deps.hashing);
-  const service = createAuthService({
-    store: deps.store,
-    hasher,
-    clock: { now: () => new Date() },
-    tokens: sessionTokens,
     currentUser: { get: () => getContext()?.user ?? null },
     logger,
     sessionTtlMs: deps.sessionTtlHours * 3_600_000,
+    policy: { ttlMs: deps.codeTtlMinutes * 60_000, ...LOGIN_CODE_LIMITS },
   });
-  return { service, hasher };
 }
 
-/** AuthError (package) → AppError (spec.md §3); called by the single global error handler. */
+/** AuthError (package) → AppError (API codes); called by the single global error handler. */
 export function toAppError(error: AuthError): AppError {
   switch (error.code) {
     case 'USER_NOT_FOUND':
       return new AppError('NOT_FOUND', 'User not found');
-    case 'AUTH_BUSY':
-      return new AppError('AUTH_BUSY', error.message);
     case 'TOO_MANY_REQUESTS':
       return new AppError('TOO_MANY_REQUESTS', error.message, undefined, error.retryAfterSeconds);
     default:

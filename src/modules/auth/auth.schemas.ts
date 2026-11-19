@@ -1,15 +1,10 @@
 import { z } from 'zod';
-import type { UserRow } from '../../shared/db/rows.js';
+import type { UserRecord } from '@lch/auth-core';
 
 const Email = z
   .email()
   .max(254)
   .transform((e) => e.toLowerCase());
-
-export const CredentialsBody = z.object({
-  email: Email,
-  password: z.string().min(8).max(128),
-});
 
 /** Passwordless sign-in (ADR 0011). */
 export const CodeRequestBody = z.object({ email: Email });
@@ -19,7 +14,6 @@ export const CodeVerifyBody = z.object({
 });
 /** Link token: 32 random bytes as base64url (43 chars); bounded so garbage is not hashed. */
 export const LinkVerifyBody = z.object({ token: z.string().min(16).max(128) });
-export type Credentials = z.infer<typeof CredentialsBody>;
 
 export interface UserDto {
   id: string;
@@ -28,7 +22,7 @@ export interface UserDto {
   createdAt: string;
 }
 
-export function toUserDto(user: UserRow): UserDto {
+export function toUserDto(user: UserRecord): UserDto {
   return {
     id: user.id,
     email: user.email,

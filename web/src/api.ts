@@ -126,7 +126,6 @@ export function describeError(error: unknown): string {
     FORBIDDEN: 'Запит відхилено. Оновіть сторінку й спробуйте ще раз.',
     UNAUTHENTICATED: 'Сесія завершилась — увійдіть знову.',
     DB_UNAVAILABLE: 'Сервіс тимчасово недоступний. Спробуйте за хвилину.',
-    AUTH_BUSY: 'Забагато входів одночасно. Спробуйте ще раз за секунду.',
     NOT_FOUND: 'Не знайдено.',
   };
   return known[error.code] ?? error.message;

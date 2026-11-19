@@ -3,7 +3,7 @@
  *
  *   npx tsx scripts/perf/load.ts --label=baseline
  *   npx tsx scripts/perf/load.ts --label=after --scenarios=handshake:200 --repeats=3
- *   npx tsx scripts/perf/load.ts --label=sweep --sweep="handshake:100,200,400,800;login:5,10,20,40" --repeats=1
+ *   npx tsx scripts/perf/load.ts --label=sweep --sweep="handshake:100,200,400,800;cabinet:50,100,200" --repeats=1
  *
  * Per measurement: warm-up run (discarded) → /debug/runtime snapshot → measured k6 run →
  * snapshot. Server numbers are deltas between the snapshots over k6's own test duration.
@@ -13,23 +13,22 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { RuntimeSnapshot } from '../../src/shared/runtime-metrics.js';
 import {
-  ADMIN,
+  ADMIN_EMAIL,
   ROOT,
-  SEED_PASSWORD,
   buildImage,
   codeVersion,
   getJson,
   log,
-  login,
   prepareData,
   runK6,
+  sessionsFor,
   startApp,
   type K6Summary,
 } from './stand.js';
 
 interface Options {
   label: string;
-  points: { scenario: string; rate: number; loginRate?: number }[];
+  points: { scenario: string; rate: number }[];
   repeats: number;
   duration: string;
   warmup: string;
@@ -38,7 +37,8 @@ interface Options {
 }
 
 const DEFAULT_SCENARIOS =
-  'handshake:200,cabinet:100,login:20,plans:200,admin:20,mixed:200,storm:400+60';
+  // No `login` / `storm` since ADR 0011: sign-in by code has no CPU-heavy KDF to measure.
+  'handshake:200,cabinet:100,plans:200,admin:20,mixed:200';
 
 function arg(name: string): string | undefined {
   return process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
@@ -52,12 +52,8 @@ function parseOptions(): Options {
         return rates.split(',').map((r) => ({ scenario, rate: Number(r) }));
       })
     : (arg('scenarios') ?? DEFAULT_SCENARIOS).split(',').map((p) => {
-        // storm:400+60 → 400 handshakes/s plus 60 logins/s at the same time
         const [scenario = '', rate = ''] = p.split(':');
-        const [main = '', login] = rate.split('+');
-        return login === undefined
-          ? { scenario, rate: Number(main) }
-          : { scenario, rate: Number(main), loginRate: Number(login) };
+        return { scenario, rate: Number(rate) };
       });
   return {
     label: arg('label') ?? 'run',
@@ -161,22 +157,21 @@ async function main(): Promise<void> {
   const served = await getJson<{ commit: string }>('/version');
   log(`app up, /version → ${served.commit}`);
 
-  const tokens = await Promise.all(
-    Array.from({ length: 50 }, (_, i) => login(`seed-${i + 1}@lch.local`, SEED_PASSWORD)),
-  );
-  const adminToken = await login(ADMIN.email, ADMIN.password);
+  const [adminToken = '', ...tokens] = sessionsFor([
+    ADMIN_EMAIL,
+    ...Array.from({ length: 50 }, (_, i) => `seed-${i + 1}@lch.local`),
+  ]);
   const env = { TOKENS_LIST: tokens.join(','), ADMIN_TOKEN: adminToken };
 
-  const results: { scenario: string; rate: number; loginRate?: number; runs: Measurement[] }[] = [];
+  const results: { scenario: string; rate: number; runs: Measurement[] }[] = [];
   for (const p of o.points) {
     log(`${p.scenario} @ ${p.rate} rps: warm-up ${o.warmup}`);
-    const pEnv = p.loginRate === undefined ? env : { ...env, LOGIN_RATE: String(p.loginRate) };
-    runK6({ ...p, duration: o.warmup, env: pEnv }, `warmup-${p.scenario}`);
+    runK6({ ...p, duration: o.warmup, env }, `warmup-${p.scenario}`);
     const runs: Measurement[] = [];
     for (let i = 1; i <= o.repeats; i += 1) {
       const a = await getJson<RuntimeSnapshot>('/debug/runtime?reset=1');
       const s = runK6(
-        { ...p, duration: o.duration, env: pEnv },
+        { ...p, duration: o.duration, env },
         `${o.label}-${p.scenario}-${p.rate}-${i}`,
       );
       const b = await getJson<RuntimeSnapshot>('/debug/runtime');
@@ -204,7 +199,7 @@ async function main(): Promise<void> {
   const rows = results.map((r) =>
     [
       `\`${r.scenario}\``,
-      r.loginRate === undefined ? String(r.rate) : `${r.rate} + ${r.loginRate} login`,
+      String(r.rate),
       col((m) => m.rps, 0)(r),
       col((m) => m.p50)(r),
       col((m) => m.p95)(r),

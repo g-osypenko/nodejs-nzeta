@@ -3,8 +3,6 @@ import type { Sql } from 'postgres';
 export interface SeedOptions {
   users: number;
   licenses: number;
-  /** One scrypt hash shared by all demo users (hashing per user would dominate a big seed). */
-  passwordHash: string;
 }
 
 export interface SeedResult {
@@ -23,8 +21,8 @@ export async function seedDemoData(sql: Sql, opts: SeedOptions): Promise<SeedRes
   if (opts.licenses > 0 && opts.users < 1) throw new Error('licenses need at least one user');
   return sql.begin(async (tx) => {
     const users = await tx`
-      INSERT INTO users (email, password_hash, role)
-      SELECT 'seed-' || g || '@lch.local', ${opts.passwordHash}, 'USER'
+      INSERT INTO users (email, role)
+      SELECT 'seed-' || g || '@lch.local', 'USER'
       FROM generate_series(1, ${opts.users}::int) AS g
       ON CONFLICT (email) DO NOTHING`;
     const licenses = await tx`

@@ -1,32 +1,30 @@
 import type { AuthUser } from '../../shared/context.js';
 import type { Db } from '../../shared/db/client.js';
 import type { UserRow } from '../../shared/db/rows.js';
-import { AppError } from '../../shared/errors.js';
 import type { AuthRepository, LoginCodeRepository } from './auth.repository.js';
 
 export function createPostgresAuthRepository(sql: Db): AuthRepository {
   const repository: AuthRepository = {
-    async createUser({ email, passwordHash, role }) {
-      // ON CONFLICT instead of catching 23505: no row back == email taken.
+    async ensureUserByEmail(email, role) {
+      // ON CONFLICT DO NOTHING returns no row for an existing user, hence the UNION fallback:
+      // one round trip in the common cases. The statement snapshot cannot see a row that a
+      // concurrent first sign-in committed while this INSERT waited on the unique index —
+      // then neither branch returns it and one plain SELECT (a new snapshot) does.
       const [row] = await sql<UserRow[]>`
-        INSERT INTO users (email, password_hash, role)
-        VALUES (${email}, ${passwordHash}, ${role})
-        ON CONFLICT (email) DO NOTHING
-        RETURNING *`;
-      if (!row) throw new AppError('EMAIL_TAKEN', 'Email is already registered');
-      return row;
-    },
-
-    async ensureUser({ email, passwordHash, role }) {
-      await sql`
-        INSERT INTO users (email, password_hash, role)
-        VALUES (${email}, ${passwordHash}, ${role})
-        ON CONFLICT (email) DO NOTHING`;
-    },
-
-    async findUserByEmail(email) {
-      const [row] = await sql<UserRow[]>`SELECT * FROM users WHERE email = ${email}`;
-      return row ?? null;
+        WITH inserted AS (
+          INSERT INTO users (email, password_hash, role)
+          VALUES (${email}, NULL, ${role})
+          ON CONFLICT (email) DO NOTHING
+          RETURNING *
+        )
+        SELECT * FROM inserted
+        UNION ALL
+        SELECT * FROM users WHERE email = ${email}
+        LIMIT 1`;
+      if (row) return row;
+      const [raced] = await sql<UserRow[]>`SELECT * FROM users WHERE email = ${email}`;
+      if (!raced) throw new Error('user vanished during sign-in');
+      return raced;
     },
 
     async findUserById(id) {
@@ -105,28 +103,6 @@ export function createPostgresLoginCodeRepository(sql: Db): LoginCodeRepository 
         WHERE token_hash = ${tokenHash} AND consumed_at IS NULL AND expires_at > ${now}
         RETURNING email`;
       return row?.email ?? null;
-    },
-
-    async ensureUserByEmail(email, role) {
-      // ON CONFLICT DO NOTHING returns no row for an existing user, hence the UNION fallback:
-      // one round trip in the common cases. The statement snapshot cannot see a row that a
-      // concurrent first sign-in committed while this INSERT waited on the unique index —
-      // then neither branch returns it and one plain SELECT (a new snapshot) does.
-      const [row] = await sql<UserRow[]>`
-        WITH inserted AS (
-          INSERT INTO users (email, password_hash, role)
-          VALUES (${email}, NULL, ${role})
-          ON CONFLICT (email) DO NOTHING
-          RETURNING *
-        )
-        SELECT * FROM inserted
-        UNION ALL
-        SELECT * FROM users WHERE email = ${email}
-        LIMIT 1`;
-      if (row) return row;
-      const [raced] = await sql<UserRow[]>`SELECT * FROM users WHERE email = ${email}`;
-      if (!raced) throw new Error('user vanished during sign-in');
-      return raced;
     },
   };
   return repository;
