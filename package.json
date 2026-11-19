@@ -8,6 +8,8 @@
   ],
   "scripts": {
     "dev": "tsx watch --conditions=source src/index.ts",
+    "local": "tsx scripts/dev.ts",
+    "dev:pay": "tsx scripts/dev-pay.ts",
     "build": "npm run build -w @lch/auth-core && tsc -p tsconfig.build.json",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
