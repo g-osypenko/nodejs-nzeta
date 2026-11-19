@@ -5,7 +5,7 @@ import { useAuthed } from './useAuthed';
 
 export function OrderPage(): ReactElement {
   const { id = '' } = useParams();
-  const { data: order, error, reload } = useAuthed((token) => api.order(token, id), [id]);
+  const { data: order, error, reload } = useAuthed(() => api.order(id), [id]);
 
   return (
     <section className="narrow">

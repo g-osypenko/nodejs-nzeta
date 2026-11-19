@@ -11,7 +11,7 @@ const STATUS_LABEL: Record<License['status'], string> = {
 };
 
 export function LicensesPage(): ReactElement {
-  const { data: licenses, error } = useAuthed((token) => api.licenses(token));
+  const { data: licenses, error } = useAuthed(() => api.licenses());
 
   return (
     <section>

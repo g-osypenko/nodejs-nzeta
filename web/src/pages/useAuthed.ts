@@ -13,8 +13,8 @@ interface Loaded<T> {
  * Loads data that needs a session. No session → login page with ?next= back here;
  * 401 from the server (expired/revoked) → the stale session is dropped, same redirect.
  */
-export function useAuthed<T>(load: (token: string) => Promise<T>, deps: unknown[] = []): Loaded<T> {
-  const { token, loading, forget } = useAuth();
+export function useAuthed<T>(load: () => Promise<T>, deps: unknown[] = []): Loaded<T> {
+  const { user, loading, forget } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [data, setData] = useState<T | null>(null);
@@ -26,12 +26,12 @@ export function useAuthed<T>(load: (token: string) => Promise<T>, deps: unknown[
     const toLogin = (): void => {
       void navigate(`/login?next=${encodeURIComponent(location.pathname)}`, { replace: true });
     };
-    if (token === null) {
+    if (user === null) {
       toLogin();
       return;
     }
     let cancelled = false;
-    load(token)
+    load()
       .then((value) => {
         if (!cancelled) setData(value);
       })
@@ -49,7 +49,7 @@ export function useAuthed<T>(load: (token: string) => Promise<T>, deps: unknown[
     };
     // `load` is recreated on every render by callers; `deps` carries what it depends on.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, loading, attempt, ...deps]);
+  }, [user?.id, loading, attempt, ...deps]);
 
   return { data, error, reload: () => setAttempt((n) => n + 1) };
 }
