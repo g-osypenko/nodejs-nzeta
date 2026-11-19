@@ -23,7 +23,7 @@
 
 ## Відкриті рішення (ухвалює власник продукту)
 
-1. ~~**Сесія**~~ — вирішено: httpOnly-cookie + перевірка `Origin` ([ADR 0011](../adr/0011-passwordless-email-code-and-cookie-session.md)). Відкрито: коли прибрати вхід паролем зовсім (крок 2 ADR 0011).
+1. ~~**Сесія**~~ — вирішено: httpOnly-cookie + перевірка `Origin` ([ADR 0011](../adr/0011-passwordless-email-code-and-cookie-session.md)). Вхід паролем прибрано зовсім (крок 2 ADR 0011).
 2. **CORS:** зараз `origin: true` — за same-origin його можна вимкнути взагалі або звузити до allowlist (лоадер ходить не з браузера, CORS йому не потрібен).
 3. **Платіжний провайдер:** LiqPay / WayForPay / Stripe — підписаний вебхук (HMAC) замість спільного секрету.
 4. **Тести фронту:** Vitest + Testing Library (компоненти) і Playwright (сценарій покупця) — у CI як окремий required check.
