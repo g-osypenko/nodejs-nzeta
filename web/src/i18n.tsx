@@ -19,7 +19,16 @@ export const LANGS: readonly Lang[] = ['uk', 'en'];
 
 const uk = {
   locale: 'uk-UA',
-  nav: { plans: 'Тарифи', licenses: 'Мої ліцензії', signIn: 'Увійти', signOut: 'Вийти' },
+  nav: {
+    guides: 'Гайди',
+    plans: 'Тарифи',
+    licenses: 'Мої ліцензії',
+    account: 'Кабінет',
+    signIn: 'Увійти',
+    signOut: 'Вийти',
+  },
+  support: 'Підтримка',
+  supportNote: 'Питання, баги, ідеї — пишіть нам у Discord.',
   langLabel: 'Мова',
   hero: {
     title: 'Ліцензії та налаштування в одному місці',
@@ -88,6 +97,32 @@ const uk = {
     retry: 'спробувати ще раз',
   },
   notFound: { title: 'Сторінку не знайдено', home: 'На головну' },
+  guides: {
+    title: 'Гайди',
+    list: 'Усі гайди',
+    videoSoon: 'Відео з’явиться тут',
+    notFound: 'Такого гайду немає.',
+  },
+  account: {
+    title: 'Кабінет',
+    configsTitle: 'Мої конфіги',
+    configsLead:
+      'Завантажте .json конфіга з програми, дайте йому назву — і він буде доступний на будь-якому вашому пристрої.',
+    file: 'Файл .json',
+    name: 'Назва',
+    namePlaceholder: 'наприклад, main-profile',
+    nameHint: 'Латиниця, цифри, «-» і «_», до 64 символів.',
+    upload: 'Зберегти конфіг',
+    uploading: 'Зберігаємо…',
+    saved: (name: string): string => `Конфіг «${name}» збережено.`,
+    badJson: 'Це не JSON: перевірте файл.',
+    noConfigs: 'Конфігів ще немає.',
+    updated: 'оновлено',
+    download: 'Завантажити',
+    remove: 'Видалити',
+    example: 'Приклад конфіга',
+    testCode: 'Тестовий код для входу на localhost: 1111-1111',
+  },
   errors: {
     offline: 'Немає зв’язку із сервером. Спробуйте ще раз.',
     INVALID_CODE: 'Код неправильний або застарів. Перевірте лист або надішліть новий код.',
@@ -104,7 +139,16 @@ export type Messages = typeof uk;
 
 const en: Messages = {
   locale: 'en-US',
-  nav: { plans: 'Plans', licenses: 'My licenses', signIn: 'Sign in', signOut: 'Sign out' },
+  nav: {
+    guides: 'Guides',
+    plans: 'Plans',
+    licenses: 'My licenses',
+    account: 'Account',
+    signIn: 'Sign in',
+    signOut: 'Sign out',
+  },
+  support: 'Support',
+  supportNote: 'Questions, bugs, ideas — talk to us on Discord.',
   langLabel: 'Language',
   hero: {
     title: 'Licenses and settings in one place',
@@ -173,6 +217,32 @@ const en: Messages = {
     retry: 'try again',
   },
   notFound: { title: 'Page not found', home: 'Home' },
+  guides: {
+    title: 'Guides',
+    list: 'All guides',
+    videoSoon: 'The video will be here',
+    notFound: 'There is no such guide.',
+  },
+  account: {
+    title: 'Account',
+    configsTitle: 'My configs',
+    configsLead:
+      'Upload a .json config from the app and name it — it will be available on any of your devices.',
+    file: '.json file',
+    name: 'Name',
+    namePlaceholder: 'e.g. main-profile',
+    nameHint: 'Latin letters, digits, “-” and “_”, up to 64 characters.',
+    upload: 'Save config',
+    uploading: 'Saving…',
+    saved: (name) => `Config “${name}” saved.`,
+    badJson: 'This is not JSON: check the file.',
+    noConfigs: 'No configs yet.',
+    updated: 'updated',
+    download: 'Download',
+    remove: 'Delete',
+    example: 'Example config',
+    testCode: 'Test sign-in code on localhost: 1111-1111',
+  },
   errors: {
     offline: 'No connection to the server. Please try again.',
     INVALID_CODE: 'The code is wrong or expired. Check the email or request a new code.',

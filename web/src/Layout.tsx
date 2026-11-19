@@ -109,10 +109,11 @@ export function Layout(): ReactElement {
           <img src={banner} alt="Neural Zeta" width="417" height="112" />
         </Link>
         <nav className="nav">
+          <NavLink to="/guides">{t.nav.guides}</NavLink>
           <NavLink to="/" end>
             {t.nav.plans}
           </NavLink>
-          {user && <NavLink to="/licenses">{t.nav.licenses}</NavLink>}
+          {user && <NavLink to="/account">{t.nav.account}</NavLink>}
           <LanguageMenu />
           <a
             href={DISCORD_INVITE}
@@ -143,6 +144,18 @@ export function Layout(): ReactElement {
       <main className="content">
         <Outlet />
       </main>
+      <footer className="footer">
+        <p className="muted">{t.supportNote}</p>
+        <a
+          href={DISCORD_INVITE}
+          className="button secondary support"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <DiscordIcon />
+          {t.support}
+        </a>
+      </footer>
     </div>
   );
 }

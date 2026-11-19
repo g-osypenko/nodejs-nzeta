@@ -32,7 +32,7 @@ export function VerifyLinkPage(): ReactElement {
       .verifyLink(token)
       .then(async ({ user }) => {
         signedIn(user);
-        await navigate('/licenses', { replace: true });
+        await navigate('/account', { replace: true });
       })
       .catch((e: unknown) => setFailure(e));
   }, [signedIn, navigate]);

@@ -640,3 +640,209 @@ code {
     aspect-ratio: 4 / 5;
   }
 }
+
+/* --- footer: support ---------------------------------------------------------------------- */
+
+.footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 24px 40px;
+  border-top: 1px solid var(--border);
+  text-align: center;
+}
+
+.footer p {
+  margin: 0;
+}
+
+.button.support {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* --- guides: list on the left, guide in the centre ----------------------------------------- */
+
+.guides {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 40px;
+  align-items: start;
+}
+
+.guides-nav {
+  position: sticky;
+  top: 96px;
+}
+
+.guides-nav-title {
+  margin: 0 0 8px;
+  font-size: 0.75rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.guides-nav ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 2px;
+}
+
+.guides-nav a {
+  display: block;
+  padding: 8px 12px;
+  border-left: 2px solid var(--border);
+  color: var(--muted);
+  text-decoration: none;
+  transition:
+    color 0.2s,
+    border-color 0.2s;
+}
+
+.guides-nav a:hover {
+  color: var(--text);
+}
+
+.guides-nav a.active {
+  color: var(--accent);
+  border-left-color: var(--accent);
+}
+
+.guide {
+  max-width: 760px;
+}
+
+.guide h1 {
+  margin-top: 0;
+}
+
+.guide p {
+  color: var(--muted);
+  font-size: 1.05rem;
+}
+
+.guide-video {
+  margin: 24px 0;
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.guide-video video,
+.guide-video iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+.guide-video.placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* --- account ------------------------------------------------------------------------------ */
+
+.account {
+  display: grid;
+  gap: 32px;
+}
+
+.account h1 {
+  margin: 0;
+}
+
+.config-form {
+  max-width: 480px;
+  margin: 16px 0 24px;
+}
+
+.config-form input[type='file'] {
+  padding: 8px;
+}
+
+.config-form small {
+  font-weight: 400;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+}
+
+.config-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--border);
+}
+
+.config-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.ok {
+  color: var(--ok);
+}
+
+button.link.danger {
+  color: var(--danger);
+}
+
+.error ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+.dev-note {
+  font-size: 0.85rem;
+  border-left: 2px solid var(--warn);
+  padding-left: 10px;
+}
+
+@media (max-width: 760px) {
+  .guides {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .guides-nav {
+    position: static;
+  }
+
+  .guides-nav ul {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .guides-nav a {
+    border-left: 0;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 12px;
+  }
+
+  .guides-nav a.active {
+    border-color: var(--accent);
+  }
+}

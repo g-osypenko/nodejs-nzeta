@@ -47,12 +47,23 @@ export interface License {
   createdAt: string;
 }
 
+export interface ConfigSummary {
+  name: string;
+  updatedAt: string;
+}
+
+export interface Config extends ConfigSummary {
+  payload: unknown;
+}
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
     readonly code: string,
     message: string,
     readonly requestId: string | null,
+    /** Field-level problems of a 400 VALIDATION_ERROR: [{ path, message }]. */
+    readonly details: { path: string; message: string }[] = [],
   ) {
     super(message);
     this.name = 'ApiError';
@@ -67,7 +78,7 @@ interface RequestOptions {
 
 function isErrorBody(
   value: unknown,
-): value is { error: { code: string; message: string }; requestId?: string } {
+): value is { error: { code: string; message: string; details?: unknown }; requestId?: string } {
   if (typeof value !== 'object' || value === null || !('error' in value)) return false;
   const error: unknown = value.error;
   return typeof error === 'object' && error !== null && 'code' in error && 'message' in error;
@@ -88,7 +99,16 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
   const data: unknown = await res.json().catch(() => null);
   if (!res.ok) {
     if (isErrorBody(data)) {
-      throw new ApiError(res.status, data.error.code, data.error.message, data.requestId ?? null);
+      const details = Array.isArray(data.error.details)
+        ? (data.error.details as { path: string; message: string }[])
+        : [];
+      throw new ApiError(
+        res.status,
+        data.error.code,
+        data.error.message,
+        data.requestId ?? null,
+        details,
+      );
     }
     throw new ApiError(res.status, 'INTERNAL', `HTTP ${res.status}`, null);
   }
@@ -114,6 +134,12 @@ export const api = {
     }),
   order: (id: string): Promise<Order> => request(`/orders/${id}`),
   licenses: (): Promise<License[]> => request('/licenses'),
+  configs: (): Promise<ConfigSummary[]> => request('/configs'),
+  config: (name: string): Promise<Config> => request(`/configs/${encodeURIComponent(name)}`),
+  saveConfig: (name: string, payload: unknown): Promise<Config> =>
+    request(`/configs/${encodeURIComponent(name)}`, { method: 'PUT', body: { payload } }),
+  deleteConfig: (name: string): Promise<void> =>
+    request(`/configs/${encodeURIComponent(name)}`, { method: 'DELETE' }),
 };
 
 /** Message for the user in the current language (i18n `t.errors`); the server message otherwise. */

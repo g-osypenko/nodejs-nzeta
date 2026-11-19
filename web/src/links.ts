@@ -1,5 +1,2 @@
-/**
- * External links of the site. DISCORD_INVITE: the community server invite (e.g. https://discord.gg/xxxx).
- * Until the real invite is set, the icon still shows and opens discord.com.
- */
-export const DISCORD_INVITE = 'https://discord.com/';
+/** External links of the site: header Discord icon and the Support button use the same invite. */
+export const DISCORD_INVITE = 'https://discord.gg/pwJBp5ErDD';

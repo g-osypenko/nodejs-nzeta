@@ -6,7 +6,7 @@ import { useI18n } from '../i18n';
 
 /** Only same-site paths are accepted as ?next= (no open redirect to another origin). */
 export function safeNext(next: string | null): string {
-  return next !== null && next.startsWith('/') && !next.startsWith('//') ? next : '/licenses';
+  return next !== null && next.startsWith('/') && !next.startsWith('//') ? next : '/account';
 }
 
 /** Matches the server's resend cooldown (ADR 0011); the server stays the authority (429). */
@@ -89,17 +89,18 @@ export function LoginPage(): ReactElement {
         {step === 'code' && (
           <>
             <p className="muted">{t.login.sent(email.trim())}</p>
+            {import.meta.env.DEV && <p className="muted dev-note">{t.account.testCode}</p>}
             <label>
               {t.login.code}
               <input
                 inputMode="numeric"
                 autoComplete="one-time-code"
-                pattern="\d{6}"
-                maxLength={6}
+                pattern="[0-9 \-]{6,9}"
+                maxLength={9}
                 required
                 autoFocus
                 value={code}
-                onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+                onChange={(e) => setCode(e.target.value.replace(/[^\d-]/g, ''))}
               />
             </label>
           </>
