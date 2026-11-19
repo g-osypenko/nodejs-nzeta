@@ -2,10 +2,11 @@ import { useEffect, useState, type FormEvent, type ReactElement } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { api, ApiError, describeError } from '../api';
 import { useAuth } from '../auth';
+import { useI18n } from '../i18n';
 
 /** Only same-site paths are accepted as ?next= (no open redirect to another origin). */
 export function safeNext(next: string | null): string {
-  return next !== null && next.startsWith('/') && !next.startsWith('//') ? next : '/licenses';
+  return next !== null && next.startsWith('/') && !next.startsWith('//') ? next : '/account';
 }
 
 /** Matches the server's resend cooldown (ADR 0011); the server stays the authority (429). */
@@ -18,12 +19,13 @@ const RESEND_AFTER_S = 60;
  */
 export function LoginPage(): ReactElement {
   const { signedIn } = useAuth();
+  const { t } = useI18n();
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [step, setStep] = useState<'email' | 'code'>('email');
-  const [error, setError] = useState<string | null>(null);
+  const [failure, setFailure] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   const [resendIn, setResendIn] = useState(0);
 
@@ -35,14 +37,14 @@ export function LoginPage(): ReactElement {
 
   const sendCode = async (): Promise<void> => {
     setBusy(true);
-    setError(null);
+    setFailure(null);
     try {
       await api.requestCode(email.trim());
       setStep('code');
       setCode('');
       setResendIn(RESEND_AFTER_S);
     } catch (e) {
-      setError(describeError(e));
+      setFailure(e);
       if (e instanceof ApiError && e.code === 'TOO_MANY_REQUESTS') setStep('code');
     } finally {
       setBusy(false);
@@ -51,13 +53,13 @@ export function LoginPage(): ReactElement {
 
   const verify = async (): Promise<void> => {
     setBusy(true);
-    setError(null);
+    setFailure(null);
     try {
       const { user } = await api.verifyCode(email.trim(), code);
       signedIn(user);
       await navigate(safeNext(params.get('next')));
     } catch (e) {
-      setError(describeError(e));
+      setFailure(e);
       setBusy(false);
     }
   };
@@ -67,12 +69,14 @@ export function LoginPage(): ReactElement {
     void (step === 'email' ? sendCode() : verify());
   };
 
+  const error = failure === null ? null : describeError(failure, t.errors);
+
   return (
     <section className="narrow">
-      <h1>Вхід</h1>
+      <h1>{t.login.title}</h1>
       <form className="form" onSubmit={submit}>
         <label>
-          Email
+          {t.login.email}
           <input
             type="email"
             autoComplete="email"
@@ -84,21 +88,19 @@ export function LoginPage(): ReactElement {
         </label>
         {step === 'code' && (
           <>
-            <p className="muted">
-              Ми надіслали на {email.trim()} лист із кодом і посиланням для входу. Код діє 10
-              хвилин.
-            </p>
+            <p className="muted">{t.login.sent(email.trim())}</p>
+            {import.meta.env.DEV && <p className="muted dev-note">{t.account.testCode}</p>}
             <label>
-              Код із листа
+              {t.login.code}
               <input
                 inputMode="numeric"
                 autoComplete="one-time-code"
-                pattern="\d{6}"
-                maxLength={6}
+                pattern="[0-9 \-]{6,9}"
+                maxLength={9}
                 required
                 autoFocus
                 value={code}
-                onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+                onChange={(e) => setCode(e.target.value.replace(/[^\d-]/g, ''))}
               />
             </label>
           </>
@@ -109,7 +111,7 @@ export function LoginPage(): ReactElement {
           </p>
         )}
         <button type="submit" className="button" disabled={busy}>
-          {busy ? 'Зачекайте…' : step === 'email' ? 'Надіслати код' : 'Увійти'}
+          {busy ? t.login.wait : step === 'email' ? t.login.send : t.login.submit}
         </button>
       </form>
       {step === 'code' && (
@@ -120,7 +122,7 @@ export function LoginPage(): ReactElement {
             disabled={busy || resendIn > 0}
             onClick={() => void sendCode()}
           >
-            {resendIn > 0 ? `Надіслати код ще раз через ${resendIn} с` : 'Надіслати код ще раз'}
+            {resendIn > 0 ? t.login.resendIn(resendIn) : t.login.resend}
           </button>
           {' · '}
           <button
@@ -129,16 +131,14 @@ export function LoginPage(): ReactElement {
             disabled={busy}
             onClick={() => {
               setStep('email');
-              setError(null);
+              setFailure(null);
             }}
           >
-            Інший email
+            {t.login.otherEmail}
           </button>
         </p>
       )}
-      {step === 'email' && (
-        <p className="muted">Пароль не потрібен. Якщо акаунта ще немає, ми його створимо.</p>
-      )}
+      {step === 'email' && <p className="muted">{t.login.noPassword}</p>}
     </section>
   );
 }

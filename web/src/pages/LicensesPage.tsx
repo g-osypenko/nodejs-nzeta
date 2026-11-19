@@ -1,62 +1,65 @@
 import type { ReactElement } from 'react';
 import { Link } from 'react-router';
-import { api, formatDate, type License } from '../api';
+import { api, type License } from '../api';
+import { useI18n } from '../i18n';
 import { useAuthed } from './useAuthed';
 
-const STATUS_LABEL: Record<License['status'], string> = {
-  UNACTIVATED: 'не активована',
-  ACTIVE: 'активна',
-  EXPIRED: 'прострочена',
-  BANNED: 'заблокована',
-};
+/** Table of the user's licenses; shared by /licenses and the account page. */
+export function LicensesTable({ licenses }: { licenses: License[] }): ReactElement {
+  const { t, formatDate } = useI18n();
+  if (licenses.length === 0) {
+    return (
+      <p>
+        {t.licenses.empty} <Link to="/">{t.licenses.choosePlan}</Link>.
+      </p>
+    );
+  }
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>{t.licenses.key}</th>
+            <th>{t.licenses.state}</th>
+            <th>{t.licenses.device}</th>
+            <th>{t.licenses.activated}</th>
+            <th>{t.licenses.validUntil}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {licenses.map((l) => (
+            <tr key={l.id}>
+              <td>
+                <code>{l.key}</code>
+              </td>
+              <td>
+                <span className={`badge ${l.status.toLowerCase()}`}>
+                  {t.licenses.status[l.status]}
+                </span>
+              </td>
+              <td>{l.hwid ?? '—'}</td>
+              <td>{formatDate(l.activatedAt)}</td>
+              <td>
+                {l.expiresAt ? formatDate(l.expiresAt) : t.licenses.afterActivation(l.durationDays)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
 export function LicensesPage(): ReactElement {
+  const { t } = useI18n();
   const { data: licenses, error } = useAuthed(() => api.licenses());
 
   return (
     <section>
-      <h1>Мої ліцензії</h1>
+      <h1>{t.licenses.title}</h1>
       {error && <p className="error">{error}</p>}
-      {licenses === null && !error && <p className="muted">Завантаження…</p>}
-      {licenses?.length === 0 && (
-        <p>
-          Ліцензій ще немає — <Link to="/">оберіть тариф</Link>.
-        </p>
-      )}
-      {licenses && licenses.length > 0 && (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Ключ</th>
-                <th>Стан</th>
-                <th>Пристрій (HWID)</th>
-                <th>Активовано</th>
-                <th>Діє до</th>
-              </tr>
-            </thead>
-            <tbody>
-              {licenses.map((l) => (
-                <tr key={l.id}>
-                  <td>
-                    <code>{l.key}</code>
-                  </td>
-                  <td>
-                    <span className={`badge ${l.status.toLowerCase()}`}>
-                      {STATUS_LABEL[l.status]}
-                    </span>
-                  </td>
-                  <td>{l.hwid ?? '—'}</td>
-                  <td>{formatDate(l.activatedAt)}</td>
-                  <td>
-                    {l.expiresAt ? formatDate(l.expiresAt) : `${l.durationDays} дн. від активації`}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      {licenses === null && !error && <p className="muted">{t.loading}</p>}
+      {licenses && <LicensesTable licenses={licenses} />}
     </section>
   );
 }

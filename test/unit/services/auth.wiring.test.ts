@@ -66,6 +66,23 @@ describe('auth (app wiring of @lch/auth-core)', () => {
     expect(challenge?.tokenHash).toBe(sha256(linkToken));
   });
 
+  it('DEV_LOGIN_CODE: every letter carries the fixed code, and it signs in like a real one', async () => {
+    const mail = createMemoryMailer('https://lch.test');
+    const dev = createAppAuth({
+      store: createMemoryAuthRepository(store),
+      codes: createMemoryLoginCodeRepository(store),
+      mailer: mail.mailer,
+      sessionTtlHours: 2,
+      codeTtlMinutes: 10,
+      fixedCode: '11111111',
+    });
+    await dev.requestCode(EMAIL);
+    expect(mail.outbox[0]?.code).toBe('11111111');
+    await expect(dev.verifyCode(EMAIL, '11111111')).resolves.toMatchObject({
+      user: { email: EMAIL },
+    });
+  });
+
   it('codes are uniform random 6 digits (leading zeros kept)', async () => {
     const codes = new Set<string>();
     for (let i = 0; i < 200; i += 1) {

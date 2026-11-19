@@ -112,6 +112,8 @@ function main(): void {
         ...process.env,
         DATA_SOURCE: 'postgres',
         MAILER: 'console',
+        // Test code for every sign-in on localhost: 1111-1111.
+        DEV_LOGIN_CODE: process.env['DEV_LOGIN_CODE'] ?? '11111111',
         COOKIE_SECURE: 'false',
         APP_BASE_URL: SITE,
         DEBUG_HEADERS: 'true',
@@ -137,12 +139,24 @@ function main(): void {
     ),
   );
 
+  // On Windows kill() stops only the direct child; tsx watch and Vite would keep their servers
+  // (and ports 3000/5173) alive. taskkill /T takes the whole process tree.
+  const kill = (child: ChildProcess): void => {
+    if (child.pid === undefined || child.exitCode !== null) return;
+    if (process.platform === 'win32') {
+      spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
+    } else {
+      child.kill();
+    }
+  };
   const stop = (): void => {
-    api.kill();
-    web.kill();
+    kill(api);
+    kill(web);
   };
   process.once('SIGINT', stop);
   process.once('SIGTERM', stop);
+  process.once('SIGHUP', stop); // the terminal window was closed
+  process.once('exit', stop);
   let alive = 2;
   for (const [child, name] of [
     [api, 'API'],

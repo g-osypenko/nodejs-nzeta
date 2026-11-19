@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { ApiError, describeError } from '../api';
 import { useAuth } from '../auth';
+import { useI18n } from '../i18n';
 
 interface Loaded<T> {
   data: T | null;
@@ -18,7 +19,9 @@ export function useAuthed<T>(load: () => Promise<T>, deps: unknown[] = []): Load
   const navigate = useNavigate();
   const location = useLocation();
   const [data, setData] = useState<T | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { t } = useI18n();
+  // The raw error is kept, so its text follows a language switch.
+  const [failure, setFailure] = useState<unknown>(null);
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
@@ -41,7 +44,7 @@ export function useAuthed<T>(load: () => Promise<T>, deps: unknown[] = []): Load
           forget();
           toLogin();
         } else {
-          setError(describeError(e));
+          setFailure(e);
         }
       });
     return (): void => {
@@ -51,5 +54,6 @@ export function useAuthed<T>(load: () => Promise<T>, deps: unknown[] = []): Load
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, loading, attempt, ...deps]);
 
+  const error = failure === null ? null : describeError(failure, t.errors);
   return { data, error, reload: () => setAttempt((n) => n + 1) };
 }

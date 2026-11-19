@@ -138,6 +138,7 @@ export async function createContainer(config: AppConfig): Promise<Container> {
       mailer,
       sessionTtlHours: config.sessionTtlHours,
       codeTtlMinutes: config.loginCodeTtlMinutes,
+      fixedCode: config.devLoginCode,
     }),
     licenses: createLicensesService({
       repo: repos.licenses,

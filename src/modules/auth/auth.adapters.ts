@@ -42,12 +42,15 @@ export function createAppAuth(deps: {
   mailer: Mailer;
   sessionTtlHours: number;
   codeTtlMinutes: number;
+  /** DEV_LOGIN_CODE: every code is this value (development only, refused in production). */
+  fixedCode?: string | null;
 }): AuthService {
+  const fixed = deps.fixedCode ?? null;
   return createAuthService({
     store: deps.store,
     codes: deps.codes,
     mailer: deps.mailer,
-    codeGenerator: sixDigitCodes,
+    codeGenerator: fixed === null ? sixDigitCodes : { generate: () => fixed },
     clock: { now: () => new Date() },
     tokens: sessionTokens,
     currentUser: { get: () => getContext()?.user ?? null },

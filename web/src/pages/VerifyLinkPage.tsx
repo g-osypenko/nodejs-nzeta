@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactElement } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { api, describeError } from '../api';
 import { useAuth } from '../auth';
+import { useI18n } from '../i18n';
 
 /**
  * Target of the link in the sign-in letter: /login/verify#token=… (ADR 0011).
@@ -10,8 +11,10 @@ import { useAuth } from '../auth';
  */
 export function VerifyLinkPage(): ReactElement {
   const { signedIn } = useAuth();
+  const { t } = useI18n();
   const navigate = useNavigate();
-  const [error, setError] = useState<string | null>(null);
+  const [failure, setFailure] = useState<unknown>(null);
+  const [noToken, setNoToken] = useState(false);
   // StrictMode runs effects twice in development; the token is single-use, so POST it once.
   const started = useRef(false);
 
@@ -22,30 +25,36 @@ export function VerifyLinkPage(): ReactElement {
     // Drop the token from the address bar and history right away.
     window.history.replaceState(null, '', window.location.pathname);
     if (!token) {
-      setError('У посиланні немає коду входу. Відкрийте посилання з листа ще раз.');
+      setNoToken(true);
       return;
     }
     api
       .verifyLink(token)
       .then(async ({ user }) => {
         signedIn(user);
-        await navigate('/licenses', { replace: true });
+        await navigate('/account', { replace: true });
       })
-      .catch((e: unknown) => setError(describeError(e)));
+      .catch((e: unknown) => setFailure(e));
   }, [signedIn, navigate]);
+
+  const error = noToken
+    ? t.login.noToken
+    : failure === null
+      ? null
+      : describeError(failure, t.errors);
 
   return (
     <section className="narrow">
-      <h1>Вхід</h1>
+      <h1>{t.login.title}</h1>
       {error === null ? (
-        <p className="muted">Перевіряємо посилання…</p>
+        <p className="muted">{t.login.checkingLink}</p>
       ) : (
         <>
           <p className="error" role="alert">
             {error}
           </p>
           <p>
-            <Link to="/login">Отримати новий код</Link>
+            <Link to="/login">{t.login.newCode}</Link>
           </p>
         </>
       )}

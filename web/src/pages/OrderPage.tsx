@@ -1,52 +1,51 @@
 import type { ReactElement } from 'react';
 import { Link, useParams } from 'react-router';
-import { api, formatDate, formatPrice } from '../api';
+import { api } from '../api';
+import { useI18n } from '../i18n';
 import { useAuthed } from './useAuthed';
 
 export function OrderPage(): ReactElement {
   const { id = '' } = useParams();
+  const { t, formatDate, formatPrice } = useI18n();
   const { data: order, error, reload } = useAuthed(() => api.order(id), [id]);
 
   return (
     <section className="narrow">
-      <h1>Замовлення</h1>
+      <h1>{t.order.title}</h1>
       {error && <p className="error">{error}</p>}
-      {order === null && !error && <p className="muted">Завантаження…</p>}
+      {order === null && !error && <p className="muted">{t.loading}</p>}
       {order && (
         <div className="card">
           <p>
-            Тариф <strong>{order.planId}</strong> · {formatPrice(order.amountCents)} · створено{' '}
-            {formatDate(order.createdAt)}
+            {t.order.summary} <strong>{t.plans.names[order.planId] ?? order.planId}</strong> ·{' '}
+            {formatPrice(order.amountCents)} · {t.order.created} {formatDate(order.createdAt)}
           </p>
           {order.status === 'PENDING' && (
             <>
               <p>
-                <span className="badge unactivated">очікує оплати</span>
+                <span className="badge unactivated">{t.order.pending}</span>
               </p>
-              <p className="muted">
-                Оплату підтверджує платіжний провайдер вебхуком. Справжнього провайдера ще не
-                підключено (spec.md §7), тож на стейджі замовлення лишається в цьому стані.
-              </p>
+              <p className="muted">{t.order.pendingNote}</p>
               <button type="button" className="button secondary" onClick={reload}>
-                Оновити стан
+                {t.order.refresh}
               </button>
             </>
           )}
           {order.status === 'PAID' && (
             <>
               <p>
-                <span className="badge active">оплачено</span> {formatDate(order.paidAt)}
+                <span className="badge active">{t.order.paid}</span> {formatDate(order.paidAt)}
               </p>
               <p>
-                Ваш ключ: <code className="key">{order.licenseKey}</code>
+                {t.order.yourKey} <code className="key">{order.licenseKey}</code>
               </p>
-              <Link to="/licenses">До моїх ліцензій →</Link>
+              <Link to="/licenses">{t.order.toLicenses}</Link>
             </>
           )}
           {order.status === 'FAILED' && (
             <p>
-              <span className="badge banned">оплата не пройшла</span> —{' '}
-              <Link to="/">спробувати ще раз</Link>
+              <span className="badge banned">{t.order.failed}</span> —{' '}
+              <Link to="/">{t.order.retry}</Link>
             </p>
           )}
         </div>
