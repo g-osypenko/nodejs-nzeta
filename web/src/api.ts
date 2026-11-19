@@ -116,25 +116,8 @@ export const api = {
   licenses: (): Promise<License[]> => request('/licenses'),
 };
 
-/** Message for the user: Ukrainian text for known codes, the server message otherwise. */
-export function describeError(error: unknown): string {
-  if (!(error instanceof ApiError)) return 'Немає зв’язку із сервером. Спробуйте ще раз.';
-  const known: Record<string, string> = {
-    INVALID_CODE: 'Код неправильний або застарів. Перевірте лист або надішліть новий код.',
-    TOO_MANY_REQUESTS: 'Забагато запитів коду. Зачекайте трохи й спробуйте знову.',
-    VALIDATION_ERROR: 'Перевірте email і код: код складається із 6 цифр.',
-    FORBIDDEN: 'Запит відхилено. Оновіть сторінку й спробуйте ще раз.',
-    UNAUTHENTICATED: 'Сесія завершилась — увійдіть знову.',
-    DB_UNAVAILABLE: 'Сервіс тимчасово недоступний. Спробуйте за хвилину.',
-    NOT_FOUND: 'Не знайдено.',
-  };
-  return known[error.code] ?? error.message;
-}
-
-export function formatPrice(cents: number): string {
-  return new Intl.NumberFormat('uk-UA', { style: 'currency', currency: 'USD' }).format(cents / 100);
-}
-
-export function formatDate(iso: string | null): string {
-  return iso === null ? '—' : new Date(iso).toLocaleDateString('uk-UA');
+/** Message for the user in the current language (i18n `t.errors`); the server message otherwise. */
+export function describeError(error: unknown, messages: Record<string, string>): string {
+  if (!(error instanceof ApiError)) return messages['offline'] ?? 'Network error';
+  return messages[error.code] ?? error.message;
 }

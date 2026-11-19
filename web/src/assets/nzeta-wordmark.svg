@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="620" height="355" viewBox="125 120 620 355">
+  <defs>
+    <filter id="neon" x="-60%" y="-60%" width="220%" height="220%" color-interpolation-filters="sRGB">
+      <feMorphology in="SourceAlpha" operator="erode" radius="56.91" result="er"/>
+      <feGaussianBlur in="er" stdDeviation="45.53" result="erb"/>
+      <feFlood flood-color="#D9FFCF" flood-opacity="0.5"/>
+      <feComposite in2="erb" operator="in"/>
+      <feComposite in2="SourceAlpha" operator="in" result="core"/>
+      <feGaussianBlur in="SourceAlpha" stdDeviation="9.96" result="b1"/>
+      <feGaussianBlur in="SourceAlpha" stdDeviation="27.89" result="b2"/>
+      <feGaussianBlur in="SourceAlpha" stdDeviation="79.67" result="b3"/>
+      <feMerge result="blurs"><feMergeNode in="b1"/><feMergeNode in="b2"/><feMergeNode in="b3"/></feMerge>
+      <feFlood flood-color="#39FF14" flood-opacity="0.8"/>
+      <feComposite in2="blurs" operator="in" result="halo"/>
+      <feMerge><feMergeNode in="halo"/><feMergeNode in="SourceGraphic"/><feMergeNode in="core"/></feMerge>
+    </filter>
+  </defs>
+  
+  <g transform="translate(133.8,356.6) scale(0.10907)">
+    <g transform="translate(0.0,0) scale(1,-1)"><path d="M150 0V1038H389V0ZM765 0V629Q765 722.5 715.0092165898618 773.25Q665.0184331797235 824 573 824Q484.9617224880383 824 436.98086124401914 776.2475247524753Q389 728.4950495049505 389 642L368 857Q414.5 951 485.5 1002.0Q556.5 1053 655 1053Q821.6129943502825 1053 912.8064971751412 942.5Q1004 832 1004 630V0Z" fill="#FFFFFF"/></g>
+    <g filter="url(#neon)" transform="translate(1328.3,231.4) scale(1.4500,-1.4500)"><mask id="neonc1" maskUnits="userSpaceOnUse" x="-242.9" y="-751.9" width="1488.8" height="2538.8"><rect x="-242.9" y="-751.9" width="1488.8" height="2538.8" fill="#fff"/><g fill="#000"><rect x="-242.9" y="1199.9" width="1488.8" height="80.2"/></g></mask><g mask="url(#neonc1)"><path d="M185 1466H925V1279Q617 1070 484.0 847.5Q351 625 351 451Q351 391 371.5 349.0Q392 307 425.5 287.5Q459 268 540 257Q898 210 898 -59Q898 -208 788.0 -319.5Q678 -431 399 -431L469 -177Q496 -181 512 -181Q563 -181 590.0 -152.5Q617 -124 617 -90Q617 -45 581.0 -25.0Q545 -5 460 1Q259 14 168.5 138.5Q78 263 78 430Q78 800 578 1233H185Z" fill="#39FF14"/></g></g>
+    <g transform="translate(2675.2,0) scale(1,-1)"><path d="M585 -15Q363.5 -15 241.75 106.25Q120 227.5 120 450V567Q120 799 237.0 926.0Q354 1053 567 1053Q768 1053 878.0 905.25Q988 757.5 988 490V422H283V596.5H766L764.5 608.5Q754.5 716 703.75 776.25Q653 836.5 567 836.5Q460 836.5 400.75 769.0Q341.5 701.5 341.5 578V446Q341.5 328.5 405.5 265.0Q469.5 201.5 585 201.5Q643.5 201.5 701.0 223.75Q758.5 246 804.5 286.5L961 140Q882 66 783.5 25.5Q685 -15 585 -15Z" fill="#FFFFFF"/></g>
+    <g transform="translate(3773.2,0) scale(1,-1)"><path d="M430 -5Q296.73251028806584 -5 236.86625514403292 66.0Q177 137 177 270V1340H416V303Q416 266 431.0 245.0Q446 224 475 224H558V-5ZM70 829V1038H558V829Z" fill="#FFFFFF"/></g>
+    <g transform="translate(4441.2,0) scale(1,-1)"><path d="M728.5 0V658Q728.5 745 677.2595693779904 792.75Q626.0191387559809 840.5 532 840.5Q472.35555555555555 840.5 414.1777777777778 822.0Q356 803.5 310.5 768.5L151 903Q211.59459459459458 974 310.7027027027027 1013.5Q409.81081081081084 1053 531 1053Q730.7677261613692 1053 840.3838630806846 952.0Q950 851 950 667V0ZM457 -15Q278.5 -15 189.25 64.0Q100 143 100 306Q100 461 190.0 537.5Q280 614 460 614H737.5L751.5 427.5H461Q390.69496855345915 427.5 355.0974842767296 397.546875Q319.5 367.59375 319.5 306Q319.5 241.01612903225805 365.625 209.75806451612902Q411.75 178.5 504 178.5Q616.25 178.5 672.375 203.5Q728.5 228.5 728.5 281.5L749.5 133Q733 82.5 689.5 49.75Q646 17 586.0 1.0Q526 -15 457 -15Z" fill="#FFFFFF"/></g>
+  </g>
+</svg>

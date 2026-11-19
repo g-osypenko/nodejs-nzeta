@@ -1,26 +1,21 @@
 import type { ReactElement } from 'react';
 import { Link } from 'react-router';
-import { api, formatDate, type License } from '../api';
+import { api } from '../api';
+import { useI18n } from '../i18n';
 import { useAuthed } from './useAuthed';
 
-const STATUS_LABEL: Record<License['status'], string> = {
-  UNACTIVATED: 'не активована',
-  ACTIVE: 'активна',
-  EXPIRED: 'прострочена',
-  BANNED: 'заблокована',
-};
-
 export function LicensesPage(): ReactElement {
+  const { t, formatDate } = useI18n();
   const { data: licenses, error } = useAuthed(() => api.licenses());
 
   return (
     <section>
-      <h1>Мої ліцензії</h1>
+      <h1>{t.licenses.title}</h1>
       {error && <p className="error">{error}</p>}
-      {licenses === null && !error && <p className="muted">Завантаження…</p>}
+      {licenses === null && !error && <p className="muted">{t.loading}</p>}
       {licenses?.length === 0 && (
         <p>
-          Ліцензій ще немає — <Link to="/">оберіть тариф</Link>.
+          {t.licenses.empty} <Link to="/">{t.licenses.choosePlan}</Link>.
         </p>
       )}
       {licenses && licenses.length > 0 && (
@@ -28,11 +23,11 @@ export function LicensesPage(): ReactElement {
           <table>
             <thead>
               <tr>
-                <th>Ключ</th>
-                <th>Стан</th>
-                <th>Пристрій (HWID)</th>
-                <th>Активовано</th>
-                <th>Діє до</th>
+                <th>{t.licenses.key}</th>
+                <th>{t.licenses.state}</th>
+                <th>{t.licenses.device}</th>
+                <th>{t.licenses.activated}</th>
+                <th>{t.licenses.validUntil}</th>
               </tr>
             </thead>
             <tbody>
@@ -43,13 +38,15 @@ export function LicensesPage(): ReactElement {
                   </td>
                   <td>
                     <span className={`badge ${l.status.toLowerCase()}`}>
-                      {STATUS_LABEL[l.status]}
+                      {t.licenses.status[l.status]}
                     </span>
                   </td>
                   <td>{l.hwid ?? '—'}</td>
                   <td>{formatDate(l.activatedAt)}</td>
                   <td>
-                    {l.expiresAt ? formatDate(l.expiresAt) : `${l.durationDays} дн. від активації`}
+                    {l.expiresAt
+                      ? formatDate(l.expiresAt)
+                      : t.licenses.afterActivation(l.durationDays)}
                   </td>
                 </tr>
               ))}
