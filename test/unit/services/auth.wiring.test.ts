@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryAuthRepository } from '../../../src/modules/auth/auth.repository.memory.js';
-import { createAuthService, type AuthService } from '../../../src/modules/auth/auth.service.js';
+import type { AuthService } from '@lch/auth-core';
+import { AuthError, createAppAuth, toAppError } from '../../../src/modules/auth/auth.adapters.js';
 import { createMemoryStore, type MemoryStore } from '../../../src/shared/db/memory-store.js';
 import { AppError } from '../../../src/shared/errors.js';
 import { asUser, runAs } from '../../support/fixtures.js';
@@ -10,17 +11,30 @@ const creds = { email: 'alice@test.local', password: 'alice-password' };
 async function codeOf(p: Promise<unknown>): Promise<string | null> {
   return p.then(
     () => null,
-    (e: unknown) => (e instanceof AppError ? e.code : `non-AppError: ${String(e)}`),
+    // The global error handler maps library errors the same way (src/app.ts mapError).
+    (e: unknown) => {
+      const mapped = e instanceof AuthError ? toAppError(e) : e;
+      return mapped instanceof AppError ? mapped.code : `non-AppError: ${String(e)}`;
+    },
   );
 }
 
-describe('auth.service', () => {
+/**
+ * Wiring of @lch/auth-core in the app (ADR 0010): real scrypt, SHA-256 tokens, the in-memory
+ * repository and the AsyncLocalStorage current user — the package itself is tested on fakes in
+ * packages/auth-core/test.
+ */
+describe('auth (app wiring of @lch/auth-core)', () => {
   let store: MemoryStore;
   let auth: AuthService;
 
   beforeEach(() => {
     store = createMemoryStore();
-    auth = createAuthService({ repo: createMemoryAuthRepository(store), sessionTtlHours: 2 });
+    auth = createAppAuth({
+      store: createMemoryAuthRepository(store),
+      sessionTtlHours: 2,
+      hashing: { maxConcurrent: 1, maxQueued: 8 },
+    }).service;
   });
   afterEach(() => {
     vi.useRealTimers();

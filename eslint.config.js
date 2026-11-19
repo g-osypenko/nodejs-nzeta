@@ -12,6 +12,7 @@ const strictTs = {
 export default [
   {
     ignores: [
+      'packages/*/dist/**',
       'dist/**',
       'node_modules/**',
       'reports/**',
@@ -21,13 +22,38 @@ export default [
     ],
   },
   {
-    files: ['src/**/*.ts', 'test/**/*.ts'],
+    files: ['src/**/*.ts', 'test/**/*.ts', 'scripts/**/*.ts', 'packages/*/{src,test}/**/*.ts'],
     languageOptions: {
       parser: tsParser,
       parserOptions: { project: './tsconfig.json' },
     },
     plugins: { '@typescript-eslint': tsPlugin },
     rules: strictTs,
+  },
+  {
+    // Library boundary (spec.md §9.4, ADR 0010): a package knows no implementation and no host.
+    files: ['packages/*/src/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['**/src/*', '../../*'],
+              message: 'A package must not import the host application.',
+            },
+            {
+              group: ['node:*'],
+              message: 'Runtime resources come in through ports (DI), not node:* imports.',
+            },
+          ],
+          paths: ['postgres', 'fastify', 'pino', 'zod', 'crypto', 'fs'].map((name) => ({
+            name,
+            message: 'Implementations belong to the host; the package depends on ports only.',
+          })),
+        },
+      ],
+    },
   },
   {
     // Frontend (web/): the same strict TS rules + the rules of hooks.

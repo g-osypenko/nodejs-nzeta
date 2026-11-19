@@ -11,11 +11,13 @@ export default {
   coverageAnalysis: 'perTest',
   mutate: [
     'src/modules/**/*.service.ts',
+    'packages/auth-core/src/**/*.ts', // the extracted library (spec §9.4)
     'src/modules/loader/**/*.ts',
     '!src/modules/loader/loader.repository.postgres.ts', // SQL: covered by integration tests
     'src/shared/**/*.ts',
     '!src/shared/db/client.ts', // pool wiring: integration
     '!src/shared/db/migrat*.ts', // migrator: integration
+    '!src/shared/db/seed.ts', // seed SQL: integration (test/integration/seed.test.ts)
     '!src/shared/db/rows.ts', // types only
     '!src/shared/db/memory-store.ts', // reference data
   ],

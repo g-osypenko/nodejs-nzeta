@@ -13,6 +13,7 @@ import fastify, {
 import type { Logger } from 'pino';
 import { ZodError } from 'zod';
 import type { Container } from './container.js';
+import { AuthError, toAppError } from './modules/auth/auth.adapters.js';
 import { authRoutes, createAuthHook } from './modules/auth/auth.routes.js';
 import { configsRoutes } from './modules/configs/configs.routes.js';
 import { licensesRoutes } from './modules/licenses/licenses.routes.js';
@@ -21,6 +22,7 @@ import { createContext, runWithContext, type RequestContext } from './shared/con
 import { isDbUnavailable } from './shared/db/errors.js';
 import { AppError } from './shared/errors.js';
 import { logger } from './shared/logger.js';
+import { createRuntimeMetrics } from './shared/runtime-metrics.js';
 import { isSpaNavigation, registerWeb, sendSpaShell } from './web.js';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -45,7 +47,9 @@ const FRAMEWORK_CODES: Record<number, string> = {
 };
 
 /** Translates any thrown value into an HTTP answer. The ONLY place where errors become responses. */
-function mapError(error: unknown): Mapped {
+function mapError(raw: unknown): Mapped {
+  // Errors of the auth library are translated to the codes of spec.md §3 here, in one place.
+  const error = raw instanceof AuthError ? toAppError(raw) : raw;
   if (error instanceof AppError) {
     return {
       status: error.statusCode,
@@ -150,7 +154,9 @@ export function buildApp(container: Container): App {
       requestId: ctx.requestId,
       processId: ctx.processId,
     };
-    if (mapped.status === 503) void reply.header('retry-after', '5');
+    // AUTH_BUSY: a hashing slot frees in tens of milliseconds; the DB may need longer.
+    if (mapped.status === 503)
+      void reply.header('retry-after', mapped.code === 'AUTH_BUSY' ? '1' : '5');
     return reply.status(mapped.status).send(body);
   });
 
@@ -173,6 +179,13 @@ export function buildApp(container: Container): App {
 
   app.get('/version', async () => ({ status: 'OK', commit: container.config.gitCommit }));
   app.get('/health', async () => ({ status: 'OK', db: await container.checkHealth() }));
+  if (container.config.debugRuntime) {
+    const runtime = createRuntimeMetrics();
+    app.addHook('onClose', async () => runtime.stop());
+    app.get<{ Querystring: { reset?: string } }>('/debug/runtime', async (request) =>
+      runtime.snapshot(request.query.reset === '1'),
+    );
+  }
 
   if (webDistDir !== null) registerWeb(app, webDistDir);
 

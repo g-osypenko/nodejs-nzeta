@@ -110,6 +110,23 @@ make docker-run  # запустити його (in-memory) на http://127.0.0.1
 
 ---
 
+## 📈 Продуктивність (Завдання 5)
+
+Стенд — [`perf/compose.yml`](./perf/compose.yml): застосунок 1 vCPU / 512 МБ, Postgres 17, k6 (відкрита модель), 200 000 ліцензій. Сценарії й SLA — [spec §9](./spec.md), інструменти — [ADR 0009](./docs/adr/0009-performance-measurement-tooling.md), звіти — [`docs/perf/`](./docs/perf/).
+
+```bash
+make load LABEL=after         # 7 сценаріїв × 5 повторів → docs/perf/load-after.md (≈ 25 хв)
+make load-sweep LABEL=after   # точки насичення handshake і login
+make profile LABEL=after      # V8 --cpu-prof під навантаженням → docs/perf/profile-after.md
+make explain LABEL=after      # EXPLAIN (ANALYZE, BUFFERS) гарячих запитів
+make lighthouse LABEL=after   # Lighthouse mobile × 3 (потрібен локальний Chrome)
+make perf-down                # прибрати стенд разом із даними
+```
+
+Автентифікацію винесено в бібліотеку [`packages/auth-core`](./packages/auth-core/) (`@lch/auth-core`, [ADR 0010](./docs/adr/0010-extract-auth-core-library.md)): усі ресурси через DI, хешування паролів з admission control (`AUTH_HASH_CONCURRENCY`, `AUTH_HASH_QUEUE`).
+
+---
+
 ## 📑 Документи репозиторію
 
 | Що                                                    | Де                                     |

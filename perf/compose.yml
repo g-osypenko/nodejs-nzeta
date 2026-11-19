@@ -1,0 +1,57 @@
+# Load-test stand (spec.md §9). Driven by scripts/perf/*.ts — `make load`, `make profile`, `make explain`.
+# Fixed resources make runs comparable: app 1 vCPU / 512 MB (≈ the smallest real instance), DB 2 vCPU.
+name: lch-perf
+
+services:
+  db:
+    image: postgres:17.6-alpine
+    environment:
+      POSTGRES_USER: lch
+      POSTGRES_PASSWORD: perf
+      POSTGRES_DB: lch_perf
+    command: ['postgres', '-c', 'track_io_timing=on', '-c', 'shared_buffers=256MB']
+    cpus: 2
+    mem_limit: 1g
+    ports:
+      - '127.0.0.1:55433:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U lch -d lch_perf']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  app:
+    image: ${APP_IMAGE:-nodejs-nzeta:perf}
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATA_SOURCE: postgres
+      DATABASE_URL: postgres://lch:perf@db:5432/lch_perf
+      WEBHOOK_SECRET: perf-webhook-secret-0001
+      ADMIN_EMAIL: admin@lch.local
+      ADMIN_PASSWORD: perf-admin-password
+      LOG_LEVEL: info # production level: logging cost is part of the measurement
+      DEBUG_RUNTIME: 'true'
+      NODE_OPTIONS: ${APP_NODE_OPTIONS:-}
+    cpus: 1
+    mem_limit: 512m
+    ports:
+      - '127.0.0.1:3900:3000'
+    volumes:
+      - ./out/profiles:/profiles
+
+  k6:
+    image: grafana/k6:2.3.0
+    profiles: [tools]
+    cpus: 2
+    environment:
+      BASE_URL: http://app:3000
+    volumes:
+      - ./k6:/scripts:ro
+      - ./out:/out
+
+volumes:
+  pgdata:

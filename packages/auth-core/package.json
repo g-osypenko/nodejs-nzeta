@@ -1,0 +1,21 @@
+{
+  "name": "@lch/auth-core",
+  "version": "0.1.0",
+  "description": "Registration, sign-in and sessions with admission-controlled password hashing; all resources injected",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json"
+  }
+}

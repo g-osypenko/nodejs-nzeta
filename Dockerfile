@@ -8,10 +8,14 @@ ARG NODE_IMAGE=node:22.23.4-alpine3.24
 FROM ${NODE_IMAGE} AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
+# Workspace manifests first: npm ci links packages/* into node_modules (ADR 0010).
+COPY packages/auth-core/package.json ./packages/auth-core/
 # --ignore-scripts: no husky `prepare` inside the image
 RUN npm ci --ignore-scripts
 COPY tsconfig.json tsconfig.build.json ./
+COPY packages ./packages
 COPY src ./src
+# Builds @lch/auth-core (dist/) first, then the app against its published types.
 RUN npm run build
 
 # Frontend (web/, ADR 0008): built here, served by Fastify from /app/public.
@@ -25,6 +29,7 @@ RUN npm run build
 FROM ${NODE_IMAGE} AS prod-deps
 WORKDIR /app
 COPY package.json package-lock.json ./
+COPY packages/auth-core/package.json ./packages/auth-core/
 RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 
 FROM ${NODE_IMAGE}
@@ -35,6 +40,9 @@ ENV NODE_ENV=production \
 WORKDIR /app
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
+# node_modules/@lch/auth-core is a symlink to packages/auth-core: ship its manifest and build only.
+COPY --from=build /app/packages/auth-core/package.json ./packages/auth-core/package.json
+COPY --from=build /app/packages/auth-core/dist ./packages/auth-core/dist
 COPY package.json ./
 COPY migrations ./migrations
 COPY --from=web /web/dist ./public
