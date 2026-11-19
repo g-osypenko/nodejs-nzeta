@@ -23,6 +23,10 @@ async function main(): Promise<void> {
 
   await app.listen({ port: config.port, host: config.host });
   logger.info({ dataSource: config.dataSource, commit: config.gitCommit }, 'server started');
+  if (config.mailer === 'console') {
+    // ADR 0011: until the product has a domain, sign-in letters are not sent, only logged.
+    logger.warn({ mailer: config.mailer }, 'sign-in emails are written to the log, not sent');
+  }
 }
 
 main().catch((err: unknown) => {

@@ -6,21 +6,20 @@
  * The script also aggregates self time by function and by layer: our code, dependencies,
  * Node internals, GC, idle — so "where does the CPU go" is answered with numbers.
  *
- *   npx tsx scripts/perf/profile.ts --scenarios=handshake:400,login:20 [--label=baseline] [--no-build]
+ *   npx tsx scripts/perf/profile.ts --scenarios=handshake:400,cabinet:100 [--label=baseline] [--no-build]
  */
 import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   OUT_DIR,
   ROOT,
-  SEED_PASSWORD,
   buildImage,
   codeVersion,
   getJson,
   log,
-  login,
   prepareData,
   runK6,
+  sessionsFor,
   startApp,
   stopApp,
 } from './stand.js';
@@ -86,7 +85,7 @@ async function main(): Promise<void> {
   const argv = (n: string): string | undefined =>
     process.argv.find((a) => a.startsWith(`--${n}=`))?.slice(n.length + 3);
   const label = argv('label') ?? 'baseline';
-  const points = (argv('scenarios') ?? 'handshake:400,login:20').split(',').map((s) => {
+  const points = (argv('scenarios') ?? 'handshake:400,cabinet:100').split(',').map((s) => {
     const [scenario = '', rate = ''] = s.split(':');
     return { scenario, rate: Number(rate) };
   });
@@ -103,9 +102,7 @@ async function main(): Promise<void> {
     // 250 µs: with the default 1 ms the profile of a 0.5 ms request had almost no busy samples.
     await startApp('--cpu-prof --cpu-prof-dir=/profiles --cpu-prof-interval=250');
     version = (await getJson<{ commit: string }>('/version')).commit;
-    const tokens = await Promise.all(
-      Array.from({ length: 50 }, (_, i) => login(`seed-${i + 1}@lch.local`, SEED_PASSWORD)),
-    );
+    const tokens = sessionsFor(Array.from({ length: 50 }, (_, i) => `seed-${i + 1}@lch.local`));
     log(`profiling ${p.scenario} @ ${p.rate} rps for ${duration}`);
     runK6({ ...p, duration, env: { TOKENS_LIST: tokens.join(',') } }, `profile-${p.scenario}`);
     stopApp();

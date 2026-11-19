@@ -23,7 +23,6 @@ export function describeApiContract(label: string, start: () => Promise<TestApp>
     let adminToken = '';
     let userId = '';
     const email = `contract-${randomUUID()}@test.local`;
-    const password = 'contract-password-1';
 
     const call = (
       method: Method,
@@ -34,7 +33,10 @@ export function describeApiContract(label: string, start: () => Promise<TestApp>
         method,
         url,
         headers: {
-          ...(opts.token ? { authorization: `Bearer ${opts.token}` } : {}),
+          // `token` = the session cookie, sent like a same-origin browser fetch (CSRF guard).
+          ...(opts.token
+            ? { cookie: `lch_session=${opts.token}`, 'sec-fetch-site': 'same-origin' }
+            : {}),
           ...opts.headers,
         },
         ...(opts.body === undefined ? {} : { payload: opts.body as Json }),
@@ -44,6 +46,20 @@ export function describeApiContract(label: string, start: () => Promise<TestApp>
       (body(res)['error'] as Json | undefined)?.['code'];
     const handshake = (key: string, hwid: string): Promise<LightMyRequestResponse> =>
       call('POST', '/api/v1/loader/handshake', { body: { license_key: key, hwid } });
+
+    /** Passwordless sign-in (ADR 0011): the code comes from the in-memory outbox. */
+    async function signInToken(to: string): Promise<string> {
+      await call('POST', '/api/v1/auth/code', { body: { email: to } });
+      // The server stores emails lower-case, so the letter goes to the lower-case address.
+      const letter = (t.container.outbox ?? []).filter((m) => m.to === to.toLowerCase()).at(-1);
+      if (!letter) throw new Error(`no sign-in letter to ${to}`);
+      const res = await call('POST', '/api/v1/auth/code/verify', {
+        body: { email: to, code: letter.code },
+      });
+      const set = res.cookies.find((c) => c.name === 'lch_session');
+      if (!set) throw new Error(`no session cookie: ${res.statusCode} ${res.body}`);
+      return set.value;
+    }
 
     async function buyLicense(planId = 'monthly'): Promise<{ orderId: string; key: string }> {
       const res = await call('POST', '/api/v1/orders', {
@@ -62,14 +78,9 @@ export function describeApiContract(label: string, start: () => Promise<TestApp>
 
     beforeAll(async () => {
       t = await start();
-      const reg = await call('POST', '/api/v1/auth/register', { body: { email, password } });
-      userId = String(body(reg)['id']);
-      token = String(
-        body(await call('POST', '/api/v1/auth/login', { body: { email, password } }))['token'],
-      );
-      adminToken = String(
-        body(await call('POST', '/api/v1/auth/login', { body: TEST_ADMIN }))['token'],
-      );
+      token = await signInToken(email);
+      userId = String(body(await call('GET', '/api/v1/auth/me', { token }))['id']);
+      adminToken = await signInToken(TEST_ADMIN.email);
     });
     afterAll(async () => {
       await t.close();
@@ -98,24 +109,21 @@ export function describeApiContract(label: string, start: () => Promise<TestApp>
     });
 
     describe('auth', () => {
-      it('register: 201 without password hash; duplicate → 409; bad email → 400', async () => {
-        const e = `x-${randomUUID()}@test.local`;
-        const res = await call('POST', '/api/v1/auth/register', { body: { email: e, password } });
-        expect(res.statusCode).toBe(201);
-        expect(body(res)).not.toHaveProperty('passwordHash');
-        expect(
-          code(await call('POST', '/api/v1/auth/register', { body: { email: e, password } })),
-        ).toBe('EMAIL_TAKEN');
-        expect(
-          code(await call('POST', '/api/v1/auth/register', { body: { email: 'bad', password } })),
-        ).toBe('VALIDATION_ERROR');
+      // One code a minute per address (ADR 0011), so every test signs in with its own email.
+      it('email is case-insensitive (stored lower-case); no password hash in the DTO', async () => {
+        const e = `case-${randomUUID()}@test.local`;
+        const me = body(
+          await call('GET', '/api/v1/auth/me', { token: await signInToken(e.toUpperCase()) }),
+        );
+        expect(me['email']).toBe(e);
+        expect(me).not.toHaveProperty('passwordHash');
       });
 
-      it('email is case-insensitive (stored lower-case)', async () => {
-        const res = await call('POST', '/api/v1/auth/login', {
-          body: { email: email.toUpperCase(), password },
-        });
-        expect(res.statusCode).toBe(200);
+      it('the password endpoints are gone (ADR 0011)', async () => {
+        for (const url of ['/api/v1/auth/register', '/api/v1/auth/login']) {
+          const res = await call('POST', url, { body: { email, password: 'whatever-1' } });
+          expect(code(res)).toBe('ROUTE_NOT_FOUND');
+        }
       });
 
       it('me with token → 200; without / with a bogus token → 401', async () => {
@@ -124,21 +132,152 @@ export function describeApiContract(label: string, start: () => Promise<TestApp>
         expect(code(await call('GET', '/api/v1/auth/me', { token: 'bogus' }))).toBe(
           'UNAUTHENTICATED',
         );
-        const malformed = await call('GET', '/api/v1/auth/me', {
-          headers: { authorization: 'Bearer   ' },
+        // A Bearer header is not a session any more: only the cookie is (ADR 0011).
+        const bearer = await call('GET', '/api/v1/auth/me', {
+          headers: { authorization: `Bearer ${token}` },
         });
-        expect(code(malformed)).toBe('UNAUTHENTICATED');
+        expect(code(bearer)).toBe('UNAUTHENTICATED');
       });
 
       it('logout kills only that session', async () => {
-        const other = String(
-          body(await call('POST', '/api/v1/auth/login', { body: { email, password } }))['token'],
-        );
+        const other = await signInToken(`other-${randomUUID()}@test.local`);
         expect((await call('POST', '/api/v1/auth/logout', { token: other })).statusCode).toBe(204);
         expect(code(await call('GET', '/api/v1/auth/me', { token: other }))).toBe(
           'UNAUTHENTICATED',
         );
         expect((await call('GET', '/api/v1/auth/me', { token })).statusCode).toBe(200);
+      });
+    });
+
+    describe('passwordless sign-in and cookie session (ADR 0011)', () => {
+      const SAME_ORIGIN = { 'sec-fetch-site': 'same-origin' };
+
+      const letterTo = (to: string): { code: string; link: string } => {
+        const letter = (t.container.outbox ?? []).filter((m) => m.to === to).at(-1);
+        if (!letter) throw new Error(`no sign-in letter to ${to}`);
+        return letter;
+      };
+      const sessionCookie = (res: LightMyRequestResponse): string => {
+        const set = res.cookies.find((c) => c.name === 'lch_session');
+        if (!set) throw new Error(`no session cookie: ${res.statusCode} ${res.body}`);
+        return `lch_session=${set.value}`;
+      };
+      const signIn = async (to: string): Promise<string> => `lch_session=${await signInToken(to)}`;
+
+      it('code: 202 → letter with a 6-digit code and a link; verify sets an httpOnly cookie', async () => {
+        const e = `otp-${randomUUID()}@test.local`;
+        const sent = await call('POST', '/api/v1/auth/code', { body: { email: e.toUpperCase() } });
+        expect(sent.statusCode).toBe(202);
+        expect(body(sent)).toHaveProperty('expiresAt');
+        const letter = letterTo(e);
+        expect(letter.code).toMatch(/^\d{6}$/);
+        expect(letter.link).toMatch(/\/login\/verify#token=[\w-]{43}$/);
+
+        const wrong = String((Number(letter.code) + 1) % 1_000_000).padStart(6, '0');
+        const bad = await call('POST', '/api/v1/auth/code/verify', {
+          body: { email: e, code: wrong },
+        });
+        expect(bad.statusCode).toBe(401);
+        expect(code(bad)).toBe('INVALID_CODE');
+
+        const ok = await call('POST', '/api/v1/auth/code/verify', {
+          body: { email: e, code: letter.code },
+        });
+        expect(ok.statusCode).toBe(200);
+        expect(body(ok)['user']).toMatchObject({ email: e, role: 'USER' });
+        expect(body(ok)).not.toHaveProperty('token');
+        const set = ok.cookies.find((c) => c.name === 'lch_session');
+        expect(set).toMatchObject({ httpOnly: true, sameSite: 'Lax', path: '/' });
+
+        const me = await call('GET', '/api/v1/auth/me', { headers: { cookie: sessionCookie(ok) } });
+        expect(body(me)['email']).toBe(e);
+        // A used code does not work twice.
+        const reused = await call('POST', '/api/v1/auth/code/verify', {
+          body: { email: e, code: letter.code },
+        });
+        expect(code(reused)).toBe('INVALID_CODE');
+      });
+
+      it('link: the token of the letter signs in once', async () => {
+        const e = `link-${randomUUID()}@test.local`;
+        await call('POST', '/api/v1/auth/code', { body: { email: e } });
+        const linkToken = decodeURIComponent(letterTo(e).link.split('#token=')[1] ?? '');
+        const ok = await call('POST', '/api/v1/auth/link/verify', { body: { token: linkToken } });
+        expect(ok.statusCode).toBe(200);
+        expect(body(ok)['user']).toMatchObject({ email: e });
+        const again = await call('POST', '/api/v1/auth/link/verify', {
+          body: { token: linkToken },
+        });
+        expect(code(again)).toBe('INVALID_CODE');
+      });
+
+      it('resend within the cooldown → 429 TOO_MANY_REQUESTS with Retry-After', async () => {
+        const e = `cool-${randomUUID()}@test.local`;
+        await call('POST', '/api/v1/auth/code', { body: { email: e } });
+        const res = await call('POST', '/api/v1/auth/code', { body: { email: e } });
+        expect(res.statusCode).toBe(429);
+        expect(code(res)).toBe('TOO_MANY_REQUESTS');
+        expect(Number(res.headers['retry-after'])).toBeGreaterThan(0);
+      });
+
+      it('bad input → 400: code not 6 digits, bad email, short link token', async () => {
+        const e = `bad-${randomUUID()}@test.local`;
+        const cases: [string, Json][] = [
+          ['/api/v1/auth/code/verify', { email: e, code: '12345' }],
+          ['/api/v1/auth/code', { email: 'not-an-email' }],
+          ['/api/v1/auth/link/verify', { token: 'short' }],
+        ];
+        for (const [url, payload] of cases) {
+          expect(code(await call('POST', url, { body: payload }))).toBe('VALIDATION_ERROR');
+        }
+      });
+
+      it('ADMIN_EMAIL signs in by code as the existing ADMIN', async () => {
+        // adminToken came from a code sign-in of ADMIN_EMAIL in beforeAll.
+        const me = await call('GET', '/api/v1/auth/me', { token: adminToken });
+        expect(body(me)).toMatchObject({ email: TEST_ADMIN.email, role: 'ADMIN' });
+      });
+
+      it('CSRF: a cookie mutation must prove same origin; a foreign Origin is always rejected', async () => {
+        const cookie = await signIn(`csrf-${randomUUID()}@test.local`);
+        const order = (headers: Record<string, string>): Promise<LightMyRequestResponse> =>
+          call('POST', '/api/v1/orders', {
+            body: { planId: 'monthly' },
+            headers: { cookie, 'idempotency-key': randomUUID(), ...headers },
+          });
+
+        const noProof = await order({});
+        expect(noProof.statusCode).toBe(403);
+        expect(code(noProof)).toBe('FORBIDDEN');
+        expect(code(await order({ origin: 'https://evil.example' }))).toBe('FORBIDDEN');
+        expect(code(await order({ 'sec-fetch-site': 'cross-site' }))).toBe('FORBIDDEN');
+        expect(code(await order({ origin: 'null' }))).toBe('FORBIDDEN');
+        // inject() sends Host: localhost:80 — an Origin with that host is the page's own origin.
+        expect((await order({ origin: 'http://localhost:80' })).statusCode).toBe(201);
+        expect((await order(SAME_ORIGIN)).statusCode).toBe(201);
+        // Reads need no proof.
+        const read = await call('GET', '/api/v1/licenses', { headers: { cookie } });
+        expect(read.statusCode).toBe(200);
+        // Service calls without a session and without an Origin (payment webhook) are not affected,
+        // but a foreign Origin is rejected even there.
+        const webhook = (headers: Record<string, string>): Promise<LightMyRequestResponse> =>
+          call('POST', '/api/v1/payments/webhook', {
+            body: { eventId: `evt_${randomUUID()}`, orderId: randomUUID(), result: 'SUCCEEDED' },
+            headers: { 'x-webhook-secret': TEST_WEBHOOK_SECRET, ...headers },
+          });
+        expect(code(await webhook({}))).not.toBe('FORBIDDEN');
+        expect(code(await webhook({ origin: 'https://evil.example' }))).toBe('FORBIDDEN');
+      });
+
+      it('logout by cookie ends the session and clears the cookie', async () => {
+        const cookie = await signIn(`out-${randomUUID()}@test.local`);
+        const out = await call('POST', '/api/v1/auth/logout', {
+          headers: { cookie, ...SAME_ORIGIN },
+        });
+        expect(out.statusCode).toBe(204);
+        expect(out.cookies.find((c) => c.name === 'lch_session')?.value).toBe('');
+        const me = await call('GET', '/api/v1/auth/me', { headers: { cookie } });
+        expect(code(me)).toBe('UNAUTHENTICATED');
       });
     });
 
@@ -231,10 +370,7 @@ export function describeApiContract(label: string, start: () => Promise<TestApp>
       it('another user cannot see my order (404, not 403); malformed id → 400', async () => {
         const { orderId } = await buyLicense();
         const e = `y-${randomUUID()}@test.local`;
-        await call('POST', '/api/v1/auth/register', { body: { email: e, password } });
-        const stranger = String(
-          body(await call('POST', '/api/v1/auth/login', { body: { email: e, password } }))['token'],
-        );
+        const stranger = await signInToken(e);
         expect(code(await call('GET', `/api/v1/orders/${orderId}`, { token: stranger }))).toBe(
           'NOT_FOUND',
         );

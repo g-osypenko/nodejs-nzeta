@@ -32,7 +32,6 @@ services:
       DATABASE_URL: postgres://lch:perf@db:5432/lch_perf
       WEBHOOK_SECRET: perf-webhook-secret-0001
       ADMIN_EMAIL: admin@lch.local
-      ADMIN_PASSWORD: perf-admin-password
       LOG_LEVEL: info # production level: logging cost is part of the measurement
       DEBUG_RUNTIME: 'true'
       NODE_OPTIONS: ${APP_NODE_OPTIONS:-}

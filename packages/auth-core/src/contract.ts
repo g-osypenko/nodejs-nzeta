@@ -2,6 +2,8 @@
  * Public contract of @lch/auth-core: domain types, ports (what the host application must provide)
  * and the service interface. The package knows no implementation: no database driver, no HTTP
  * framework, no crypto primitive — every resource comes in through `AuthDeps` (spec.md §9.4).
+ *
+ * Sign-in is passwordless (ADR 0011): an emailed 6-digit code or a one-click link opens a session.
  */
 
 export type UserRole = 'USER' | 'ADMIN';
@@ -14,14 +16,7 @@ export interface AuthUser {
 }
 
 export interface UserRecord extends AuthUser {
-  passwordHash: string;
   createdAt: Date;
-}
-
-export interface NewUser {
-  email: string;
-  passwordHash: string;
-  role: UserRole;
 }
 
 export interface SessionRecord {
@@ -31,20 +26,34 @@ export interface SessionRecord {
   expiresAt: Date;
 }
 
-export interface Credentials {
+/** One emailed sign-in attempt: a 6-digit code and a link token, stored as digests. */
+export interface NewLoginChallenge {
   email: string;
-  password: string;
+  codeHash: string;
+  tokenHash: string;
+  expiresAt: Date;
+}
+
+/** Challenges of one email created inside a time window — input of the send limits. */
+export interface RecentChallenges {
+  count: number;
+  oldestAt: Date | null;
+  newestAt: Date | null;
+}
+
+/** Issued session: the opaque token goes to the client once, only its digest is stored. */
+export interface IssuedSession {
+  token: string;
+  expiresAt: Date;
+  user: UserRecord;
 }
 
 // --- ports -----------------------------------------------------------------------------------
 
 /** Persistence of users and sessions (Postgres, in-memory, …) — owned by the host. */
 export interface AuthStore {
-  /** Must reject when the email is taken (the host decides the error type). */
-  createUser(user: NewUser): Promise<UserRecord>;
-  /** Inserts the user only if the email is free (idempotent bootstrap of the admin). */
-  ensureUser(user: NewUser): Promise<void>;
-  findUserByEmail(email: string): Promise<UserRecord | null>;
+  /** The user with this email, created with `role` if there is none yet (an existing one is kept as is). */
+  ensureUserByEmail(email: string, role: UserRole): Promise<UserRecord>;
   findUserById(id: string): Promise<UserRecord | null>;
   createSession(session: SessionRecord): Promise<void>;
   /** The session owner if the session exists and is not expired at `now`. */
@@ -52,17 +61,42 @@ export interface AuthStore {
   deleteSession(tokenHash: string): Promise<void>;
 }
 
-/** Key-derivation function for passwords (scrypt, argon2, …): self-describing encoded hashes. */
-export interface PasswordKdf {
-  hash(password: string): Promise<string>;
-  verify(password: string, encoded: string): Promise<boolean>;
+/** Persistence of sign-in challenges; every check-and-write below must be atomic. */
+export interface LoginCodeStore {
+  /** Challenges created for `email` strictly after `since`, whatever their state. */
+  recentChallenges(email: string, since: Date): Promise<RecentChallenges>;
+  /** Closes every open challenge of the email and stores the new one — only the last email works. */
+  createChallenge(challenge: NewLoginChallenge, now: Date): Promise<void>;
+  /**
+   * The newest open challenge of the email (not consumed, not expired, attempts < maxAttempts):
+   * consumed when `codeHash` matches, otherwise its attempt counter grows by one.
+   * Returns whether the code matched.
+   */
+  consumeByCode(email: string, codeHash: string, now: Date, maxAttempts: number): Promise<boolean>;
+  /** Consumes the open challenge with this link token; returns its email, or `null`. */
+  consumeByToken(tokenHash: string, now: Date): Promise<string | null>;
+}
+
+/** Delivery of the sign-in email (console in development, Brevo later) — owned by the host. */
+export interface Mailer {
+  sendLoginCode(message: {
+    email: string;
+    code: string;
+    linkToken: string;
+    expiresAt: Date;
+  }): Promise<void>;
+}
+
+/** Random 6-digit codes (crypto.randomInt in the host). */
+export interface CodeGenerator {
+  generate(): string;
 }
 
 export interface Clock {
   now(): Date;
 }
 
-/** Opaque session tokens: generation and the one-way digest that is stored instead. */
+/** Opaque tokens (sessions, sign-in links): generation and the one-way digest that is stored instead. */
 export interface SessionTokens {
   generate(): string;
   digest(token: string): string;
@@ -81,56 +115,57 @@ export interface AuthLogger {
 // --- errors ----------------------------------------------------------------------------------
 
 export type AuthErrorCode =
-  'INVALID_CREDENTIALS' | 'UNAUTHENTICATED' | 'USER_NOT_FOUND' | 'AUTH_BUSY';
+  'UNAUTHENTICATED' | 'USER_NOT_FOUND' | 'INVALID_CODE' | 'TOO_MANY_REQUESTS';
 
 /** The only error type the package throws itself; the host maps codes to its transport. */
 export class AuthError extends Error {
   constructor(
     readonly code: AuthErrorCode,
     message: string,
+    /** When the call may be repeated (TOO_MANY_REQUESTS); `null` when that is not known. */
+    readonly retryAfterSeconds: number | null = null,
   ) {
     super(message);
     this.name = 'AuthError';
   }
 }
 
-// --- password hashing with admission control -------------------------------------------------
-
-export interface HashingLimits {
-  /** KDF calls running at the same time (each one occupies a CPU core for its duration). */
-  maxConcurrent: number;
-  /** Calls allowed to wait for a slot; beyond that a call fails fast with AUTH_BUSY. */
-  maxQueued: number;
-}
-
-export interface HasherStats {
-  running: number;
-  queued: number;
-  rejected: number;
-}
-
-export interface PasswordHasher extends PasswordKdf {
-  stats(): HasherStats;
-}
-
 // --- service ---------------------------------------------------------------------------------
+
+export interface LoginCodePolicy {
+  /** Lifetime of a code and its link. */
+  ttlMs: number;
+  /** Wrong codes accepted per challenge before it is burnt. */
+  maxAttempts: number;
+  /** Minimum pause between two emails to the same address. */
+  resendCooldownMs: number;
+  /** Emails per address per hour. */
+  maxPerHour: number;
+}
 
 export interface AuthDeps {
   store: AuthStore;
-  hasher: PasswordKdf;
+  codes: LoginCodeStore;
+  mailer: Mailer;
+  codeGenerator: CodeGenerator;
   clock: Clock;
   tokens: SessionTokens;
   currentUser: CurrentUser;
   logger: AuthLogger;
   sessionTtlMs: number;
+  policy: LoginCodePolicy;
 }
 
 export interface AuthService {
-  register(input: Credentials): Promise<UserRecord>;
-  login(input: Credentials): Promise<{ token: string; expiresAt: Date }>;
+  /** Creates a challenge and emails it; the same answer whether or not the account exists. */
+  requestCode(email: string): Promise<{ expiresAt: Date }>;
+  /** Opens a session; the first sign-in of an email creates its account (role USER). */
+  verifyCode(email: string, code: string): Promise<IssuedSession>;
+  verifyLink(token: string): Promise<IssuedSession>;
   logout(token: string): Promise<void>;
   me(): Promise<UserRecord>;
-  /** Resolves a token to a user; `null` for unknown or expired tokens. */
+  /** Resolves a session token to a user; `null` for unknown or expired tokens. */
   authenticate(token: string): Promise<AuthUser | null>;
-  ensureAdmin(email: string, password: string): Promise<void>;
+  /** Bootstrap: the account of this email exists with role ADMIN (an existing account is kept). */
+  ensureAdmin(email: string): Promise<void>;
 }

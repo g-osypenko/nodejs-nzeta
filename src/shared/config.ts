@@ -10,14 +10,19 @@ const EnvSchema = z
     DB_STATEMENT_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
     WEBHOOK_SECRET: z.string().min(16, 'WEBHOOK_SECRET must be at least 16 chars'),
     ADMIN_EMAIL: z.email(),
-    ADMIN_PASSWORD: z.string().min(8),
     SESSION_TTL_HOURS: z.coerce.number().int().positive().default(24),
     GIT_COMMIT: z.string().min(1).default('dev-local'),
     DEBUG_HEADERS: z.stringbool().default(false),
     WEB_DIST_DIR: z.string().min(1).optional(),
     DEBUG_RUNTIME: z.stringbool().default(false),
-    AUTH_HASH_CONCURRENCY: z.coerce.number().int().positive().default(1),
-    AUTH_HASH_QUEUE: z.coerce.number().int().min(0).default(8),
+    // Passwordless sign-in and cookie session (ADR 0011)
+    APP_BASE_URL: z
+      .url()
+      .transform((u) => u.replace(/\/+$/, ''))
+      .optional(),
+    COOKIE_SECURE: z.stringbool().default(true),
+    MAILER: z.enum(['console', 'memory']).default('console'),
+    LOGIN_CODE_TTL_MINUTES: z.coerce.number().int().positive().max(60).default(10),
   })
   .refine((env) => env.DATA_SOURCE === 'memory' || env.DATABASE_URL !== undefined, {
     message: 'DATABASE_URL is required when DATA_SOURCE=postgres',
@@ -32,7 +37,8 @@ export interface AppConfig {
   dbPoolMax: number;
   dbStatementTimeoutMs: number;
   webhookSecret: string;
-  admin: { email: string; password: string };
+  /** Account that exists with role ADMIN from the first start; signs in by code like everyone. */
+  adminEmail: string;
   sessionTtlHours: number;
   gitCommit: string;
   /** Adds x-db-queries to responses (dev/smoke only). */
@@ -41,8 +47,16 @@ export interface AppConfig {
   webDistDir: string | null;
   /** Exposes GET /debug/runtime (CPU, ELU, event-loop delay, RSS) for load tests only. */
   debugRuntime: boolean;
-  /** Admission control of password hashing (spec.md §9, ADR 0010). */
-  authHashing: { maxConcurrent: number; maxQueued: number };
+  /**
+   * Public origin of the site, e.g. https://nodejs-nzeta.onrender.com: links in sign-in emails and
+   * the Origin that cookie-authenticated mutations must come from (CSRF). `null` = the request host.
+   */
+  appBaseUrl: string | null;
+  /** `Secure` flag of the session cookie; false only for plain-http local development. */
+  cookieSecure: boolean;
+  /** console = letter in the log (development); memory = in-process outbox (tests, smoke). */
+  mailer: 'console' | 'memory';
+  loginCodeTtlMinutes: number;
 }
 
 /** Validates the environment once at startup; an invalid env fails the process immediately. */
@@ -61,12 +75,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     dbPoolMax: e.DB_POOL_MAX,
     dbStatementTimeoutMs: e.DB_STATEMENT_TIMEOUT_MS,
     webhookSecret: e.WEBHOOK_SECRET,
-    admin: { email: e.ADMIN_EMAIL.toLowerCase(), password: e.ADMIN_PASSWORD },
+    adminEmail: e.ADMIN_EMAIL.toLowerCase(),
     sessionTtlHours: e.SESSION_TTL_HOURS,
     gitCommit: e.GIT_COMMIT,
     debugHeaders: e.DEBUG_HEADERS,
     webDistDir: e.WEB_DIST_DIR ?? null,
     debugRuntime: e.DEBUG_RUNTIME,
-    authHashing: { maxConcurrent: e.AUTH_HASH_CONCURRENCY, maxQueued: e.AUTH_HASH_QUEUE },
+    appBaseUrl: e.APP_BASE_URL ?? null,
+    cookieSecure: e.COOKIE_SECURE,
+    mailer: e.MAILER,
+    loginCodeTtlMinutes: e.LOGIN_CODE_TTL_MINUTES,
   };
 }

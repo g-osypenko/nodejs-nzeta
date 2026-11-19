@@ -5,23 +5,22 @@ import type { LicensesRepository } from '../../src/modules/licenses/licenses.rep
 import { createPostgresLicensesRepository } from '../../src/modules/licenses/licenses.repository.postgres.js';
 import { createContext, runWithContext } from '../../src/shared/context.js';
 import { createDb, type Db } from '../../src/shared/db/client.js';
-import type { UserRow } from '../../src/shared/db/rows.js';
+import type { UserRecord } from '@lch/auth-core';
 import { AppError } from '../../src/shared/errors.js';
 import { generateLicenseKey } from '../../src/shared/license-key.js';
 
 describe('postgres licenses repository (transactions, idempotency, N+1)', () => {
   let sql: Db;
   let repo: LicensesRepository;
-  let user: UserRow;
+  let user: UserRecord;
 
   beforeAll(async () => {
     sql = createDb({ url: inject('databaseUrl'), max: 10, statementTimeoutMs: 5000 });
     repo = createPostgresLicensesRepository(sql);
-    user = await createPostgresAuthRepository(sql).createUser({
-      email: `lic-${randomUUID()}@test.local`,
-      passwordHash: 'x',
-      role: 'USER',
-    });
+    user = await createPostgresAuthRepository(sql).ensureUserByEmail(
+      `lic-${randomUUID()}@test.local`,
+      'USER',
+    );
   });
   afterAll(async () => {
     await sql.end({ timeout: 5 });

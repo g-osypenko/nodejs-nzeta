@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { hashPassword, verifyPassword } from '../../../src/modules/auth/password.js';
 import { loadConfig } from '../../../src/shared/config.js';
 import { isDbUnavailable, isTransientDbError } from '../../../src/shared/db/errors.js';
 import {
@@ -36,31 +35,10 @@ describe('license key', () => {
   });
 });
 
-describe('password hashing (scrypt)', () => {
-  it('round-trips, rejects a wrong password, salts every hash', async () => {
-    const a = await hashPassword('correct horse');
-    const b = await hashPassword('correct horse');
-    expect(a).toMatch(/^scrypt\$16384\$8\$1\$[A-Za-z0-9+/=]+\$[A-Za-z0-9+/=]+$/);
-    expect(a).not.toBe(b);
-    expect(await verifyPassword('correct horse', a)).toBe(true);
-    expect(await verifyPassword('correct horsE', a)).toBe(false);
-  });
-
-  it.each([
-    ['empty', ''],
-    ['other scheme', 'bcrypt$16384$8$1$c2FsdA==$aGFzaA=='],
-    ['missing hash', 'scrypt$16384$8$1$c2FsdA=='],
-    ['truncated hash (length differs)', 'scrypt$16384$8$1$c2FsdA==$aGFzaA=='],
-  ])('rejects a malformed stored hash: %s', async (_case, stored) => {
-    expect(await verifyPassword('anything', stored)).toBe(false);
-  });
-});
-
 describe('config (env validation, fail fast)', () => {
   const base = {
     WEBHOOK_SECRET: 'x'.repeat(16),
     ADMIN_EMAIL: 'Admin@Test.Local',
-    ADMIN_PASSWORD: 'p'.repeat(8),
   };
 
   it('applies defaults and normalises the admin email', () => {
@@ -75,7 +53,7 @@ describe('config (env validation, fail fast)', () => {
       sessionTtlHours: 24,
       gitCommit: 'dev-local',
       debugHeaders: false,
-      admin: { email: 'admin@test.local', password: 'pppppppp' },
+      adminEmail: 'admin@test.local',
     });
   });
 

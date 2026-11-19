@@ -32,12 +32,9 @@ export function Layout(): ReactElement {
               </button>
             </>
           ) : (
-            <>
-              <NavLink to="/login">Вхід</NavLink>
-              <NavLink to="/register" className="button small">
-                Реєстрація
-              </NavLink>
-            </>
+            <NavLink to="/login" className="button small">
+              Увійти
+            </NavLink>
           )}
         </nav>
       </header>

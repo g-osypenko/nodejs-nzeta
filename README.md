@@ -58,7 +58,7 @@ npm run dev
 npm run web:install && npm run web:dev
 ```
 
-Адмін створюється на старті з `ADMIN_EMAIL` / `ADMIN_PASSWORD`. За замовчуванням сервер слухає `127.0.0.1:3000`; у контейнері задайте `HOST=0.0.0.0`.
+Вхід — лише кодом з пошти ([ADR 0011](./docs/adr/0011-passwordless-email-code-and-cookie-session.md)); поки немає домену, лист пишеться в лог сервера (`MAILER=console`). Адмін — акаунт `ADMIN_EMAIL` з роллю ADMIN: створюється на старті й входить кодом. За замовчуванням сервер слухає `127.0.0.1:3000`; у контейнері задайте `HOST=0.0.0.0`.
 
 ---
 
@@ -103,7 +103,7 @@ make docker-run  # запустити його (in-memory) на http://127.0.0.1
 3. **Перший образ:** Actions → `ci` → Run workflow (будь-яка гілка) → job `docker` публікує `ghcr.io/g-osypenko/nodejs-nzeta:<sha>`. GitHub → Packages → `nodejs-nzeta` → Package settings → Change visibility → **Public** (щоб Render міг тягнути образ без токена).
 4. **Схема до першого старту** (застосунок сам не мігрує, а без таблиць не стартує): `DATABASE_URL='<рядок з п. 1>' npm run db:migrate`, за бажанням `npm run db:seed`.
 5. **Render** → New → Web Service → Existing Image → `ghcr.io/g-osypenko/nodejs-nzeta:<sha>`, Instance type **Free**, регіон Frankfurt.
-   - Environment: `DATA_SOURCE=postgres`, `DATABASE_URL` (з п. 1), `WEBHOOK_SECRET` (≥ 16 символів), `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `LOG_LEVEL=info`.
+   - Environment: `DATA_SOURCE=postgres`, `DATABASE_URL` (з п. 1), `WEBHOOK_SECRET` (≥ 16 символів), `ADMIN_EMAIL`, `APP_BASE_URL=https://<назва>.onrender.com`, `LOG_LEVEL=info`.
    - Settings → Health Check Path = `/health`. Settings → Deploy Hook → скопіювати в `RENDER_DEPLOY_HOOK` (п. 2).
 
 </details>
@@ -123,7 +123,7 @@ make lighthouse LABEL=after   # Lighthouse mobile × 3 (потрібен лок�
 make perf-down                # прибрати стенд разом із даними
 ```
 
-Автентифікацію винесено в бібліотеку [`packages/auth-core`](./packages/auth-core/) (`@lch/auth-core`, [ADR 0010](./docs/adr/0010-extract-auth-core-library.md)): усі ресурси через DI, хешування паролів з admission control (`AUTH_HASH_CONCURRENCY`, `AUTH_HASH_QUEUE`).
+Автентифікацію винесено в бібліотеку [`packages/auth-core`](./packages/auth-core/) (`@lch/auth-core`, [ADR 0010](./docs/adr/0010-extract-auth-core-library.md)): усі ресурси через DI. З [ADR 0011](./docs/adr/0011-passwordless-email-code-and-cookie-session.md) пакет відповідає за вхід кодом і сесії; хешування паролів з admission control (Лаба 5) прибрано разом із паролями.
 
 ---
 

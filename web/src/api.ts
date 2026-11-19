@@ -1,6 +1,8 @@
 /**
  * Typed client of the License & Config Hub HTTP API (spec.md §1, prefix /api/v1).
- * Same origin as the page (ADR 0008): relative URLs, no CORS.
+ * Same origin as the page (ADR 0008): relative URLs, no CORS. The session is an httpOnly cookie
+ * the browser sends by itself (ADR 0011) — this code never sees a token.
+ * Mutations carry `Origin` (browsers add it to every POST), which the server's CSRF guard checks.
  * Errors always have the shape of spec.md §3: { error: { code, message }, requestId, processId }.
  */
 
@@ -18,8 +20,8 @@ export interface User {
   createdAt: string;
 }
 
-export interface Session {
-  token: string;
+export interface SignedIn {
+  user: User;
   expiresAt: string;
 }
 
@@ -60,7 +62,6 @@ export class ApiError extends Error {
 interface RequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
   body?: unknown;
-  token?: string | null;
   headers?: Record<string, string>;
 }
 
@@ -75,11 +76,11 @@ function isErrorBody(
 async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
   const headers: Record<string, string> = { accept: 'application/json', ...opts.headers };
   if (opts.body !== undefined) headers['content-type'] = 'application/json';
-  if (opts.token) headers['authorization'] = `Bearer ${opts.token}`;
 
   const res = await fetch(`/api/v1${path}`, {
     method: opts.method ?? 'GET',
     headers,
+    credentials: 'same-origin',
     ...(opts.body === undefined ? {} : { body: JSON.stringify(opts.body) }),
   });
   if (res.status === 204) return undefined as T;
@@ -96,33 +97,35 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
 
 export const api = {
   plans: (): Promise<Plan[]> => request('/plans'),
-  register: (email: string, password: string): Promise<User> =>
-    request('/auth/register', { method: 'POST', body: { email, password } }),
-  login: (email: string, password: string): Promise<Session> =>
-    request('/auth/login', { method: 'POST', body: { email, password } }),
-  logout: (token: string): Promise<void> => request('/auth/logout', { method: 'POST', token }),
-  me: (token: string): Promise<User> => request('/auth/me', { token }),
-  createOrder: (token: string, planId: string, idempotencyKey: string): Promise<Order> =>
+  /** Emails a 6-digit code and a sign-in link; the account is created on the first sign-in. */
+  requestCode: (email: string): Promise<{ expiresAt: string }> =>
+    request('/auth/code', { method: 'POST', body: { email } }),
+  verifyCode: (email: string, code: string): Promise<SignedIn> =>
+    request('/auth/code/verify', { method: 'POST', body: { email, code } }),
+  verifyLink: (token: string): Promise<SignedIn> =>
+    request('/auth/link/verify', { method: 'POST', body: { token } }),
+  logout: (): Promise<void> => request('/auth/logout', { method: 'POST' }),
+  me: (): Promise<User> => request('/auth/me'),
+  createOrder: (planId: string, idempotencyKey: string): Promise<Order> =>
     request('/orders', {
       method: 'POST',
-      token,
       body: { planId },
       headers: { 'idempotency-key': idempotencyKey },
     }),
-  order: (token: string, id: string): Promise<Order> => request(`/orders/${id}`, { token }),
-  licenses: (token: string): Promise<License[]> => request('/licenses', { token }),
+  order: (id: string): Promise<Order> => request(`/orders/${id}`),
+  licenses: (): Promise<License[]> => request('/licenses'),
 };
 
 /** Message for the user: Ukrainian text for known codes, the server message otherwise. */
 export function describeError(error: unknown): string {
   if (!(error instanceof ApiError)) return 'Немає зв’язку із сервером. Спробуйте ще раз.';
   const known: Record<string, string> = {
-    INVALID_CREDENTIALS: 'Невірний email або пароль.',
-    EMAIL_TAKEN: 'Цей email уже зареєстровано.',
-    VALIDATION_ERROR: 'Перевірте поля: email і пароль щонайменше 8 символів.',
+    INVALID_CODE: 'Код неправильний або застарів. Перевірте лист або надішліть новий код.',
+    TOO_MANY_REQUESTS: 'Забагато запитів коду. Зачекайте трохи й спробуйте знову.',
+    VALIDATION_ERROR: 'Перевірте email і код: код складається із 6 цифр.',
+    FORBIDDEN: 'Запит відхилено. Оновіть сторінку й спробуйте ще раз.',
     UNAUTHENTICATED: 'Сесія завершилась — увійдіть знову.',
     DB_UNAVAILABLE: 'Сервіс тимчасово недоступний. Спробуйте за хвилину.',
-    AUTH_BUSY: 'Забагато входів одночасно. Спробуйте ще раз за секунду.',
     NOT_FOUND: 'Не знайдено.',
   };
   return known[error.code] ?? error.message;

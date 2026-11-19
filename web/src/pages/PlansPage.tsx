@@ -4,7 +4,7 @@ import { api, describeError, formatPrice, type Plan } from '../api';
 import { useAuth } from '../auth';
 
 export function PlansPage(): ReactElement {
-  const { token } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [plans, setPlans] = useState<Plan[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -18,7 +18,7 @@ export function PlansPage(): ReactElement {
   }, []);
 
   const buy = async (planId: string): Promise<void> => {
-    if (token === null) {
+    if (user === null) {
       await navigate(`/login?next=${encodeURIComponent('/')}`);
       return;
     }
@@ -26,7 +26,7 @@ export function PlansPage(): ReactElement {
     setError(null);
     try {
       // One key per click: a retried request (double click, flaky network) returns the same order.
-      const order = await api.createOrder(token, planId, crypto.randomUUID());
+      const order = await api.createOrder(planId, crypto.randomUUID());
       await navigate(`/orders/${order.id}`);
     } catch (e) {
       setError(describeError(e));

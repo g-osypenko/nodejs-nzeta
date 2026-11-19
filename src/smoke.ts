@@ -9,6 +9,7 @@ import dotenv from 'dotenv';
 import type { LightMyRequestResponse } from 'fastify';
 import { buildApp, type App } from './app.js';
 import { createContainer } from './container.js';
+import type { SentMail } from './modules/auth/auth.mailer.js';
 import { loadConfig } from './shared/config.js';
 import { logger } from './shared/logger.js';
 
@@ -21,7 +22,6 @@ const config = loadConfig({
   DATA_SOURCE: useDb ? 'postgres' : 'memory',
   WEBHOOK_SECRET: process.env['WEBHOOK_SECRET'] ?? 'smoke-webhook-secret-0001',
   ADMIN_EMAIL: process.env['ADMIN_EMAIL'] ?? 'admin@lch.local',
-  ADMIN_PASSWORD: process.env['ADMIN_PASSWORD'] ?? 'admin-password-01',
 });
 
 let passed = 0;
@@ -39,7 +39,7 @@ const json = (res: LightMyRequestResponse): Json => res.json<Json>();
 const errorCode = (res: LightMyRequestResponse): unknown =>
   (json(res)['error'] as Json | undefined)?.['code'];
 
-async function scenario(app: App): Promise<void> {
+async function scenario(app: App, outbox: readonly SentMail[]): Promise<void> {
   const call = (
     method: 'GET' | 'POST' | 'PUT' | 'DELETE',
     url: string,
@@ -49,7 +49,10 @@ async function scenario(app: App): Promise<void> {
       method,
       url,
       headers: {
-        ...(opts.token ? { authorization: `Bearer ${opts.token}` } : {}),
+        // `token` = the session cookie, sent like a same-origin browser fetch (CSRF guard).
+        ...(opts.token
+          ? { cookie: `lch_session=${opts.token}`, 'sec-fetch-site': 'same-origin' }
+          : {}),
         ...opts.headers,
       },
       ...(opts.body === undefined ? {} : { payload: opts.body as Json }),
@@ -63,33 +66,63 @@ async function scenario(app: App): Promise<void> {
     'unknown route → 404 ROUTE_NOT_FOUND',
   );
 
-  process.stdout.write('auth\n');
+  process.stdout.write('auth: sign-in by emailed code (ADR 0011)\n');
+  // The code is read from the in-memory outbox, as the person would read it from the letter.
+  const signIn = async (to: string): Promise<LightMyRequestResponse> => {
+    await call('POST', '/api/v1/auth/code', { body: { email: to } });
+    const letter = outbox.filter((m) => m.to === to).at(-1);
+    return call('POST', '/api/v1/auth/code/verify', {
+      body: { email: to, code: letter?.code ?? '' },
+    });
+  };
+  const sessionOf = (r: LightMyRequestResponse): string =>
+    r.cookies.find((c) => c.name === 'lch_session')?.value ?? '';
+
   const email = `smoke+${Date.now()}@lch.local`;
-  const password = 'smoke-password-1';
-  let res = await call('POST', '/api/v1/auth/register', { body: { email, password } });
-  check(res.statusCode === 201, 'register → 201', res);
-  const userId = String(json(res)['id']);
-  res = await call('POST', '/api/v1/auth/register', { body: { email, password } });
-  check(errorCode(res) === 'EMAIL_TAKEN', 'register same email → 409 EMAIL_TAKEN', res);
-  res = await call('POST', '/api/v1/auth/register', { body: { email: 'not-an-email', password } });
+  let res = await call('POST', '/api/v1/auth/code', { body: { email } });
+  check(res.statusCode === 202, 'request code → 202', res);
+  const letter = outbox.filter((m) => m.to === email).at(-1);
+  check(letter !== undefined && /^\d{6}$/.test(letter.code), 'letter with a 6-digit code');
+  res = await call('POST', '/api/v1/auth/code', { body: { email } });
+  check(errorCode(res) === 'TOO_MANY_REQUESTS', 'second code within a minute → 429', res);
+  res = await call('POST', '/api/v1/auth/code', { body: { email: 'not-an-email' } });
+  check(errorCode(res) === 'VALIDATION_ERROR', 'invalid email → 400 VALIDATION_ERROR', res);
+  res = await call('POST', '/api/v1/auth/code/verify', { body: { email, code: '000000' } });
   check(
-    errorCode(res) === 'VALIDATION_ERROR',
-    'register invalid email → 400 VALIDATION_ERROR',
+    errorCode(res) === 'INVALID_CODE' || letter?.code === '000000',
+    'wrong code → 401 INVALID_CODE',
     res,
   );
-  res = await call('POST', '/api/v1/auth/login', { body: { email, password: 'wrong-password' } });
-  check(errorCode(res) === 'INVALID_CREDENTIALS', 'login wrong password → 401', res);
-  res = await call('POST', '/api/v1/auth/login', { body: { email, password } });
-  check(res.statusCode === 200, 'login → 200', res);
-  const token = String(json(res)['token']);
+  res = await call('POST', '/api/v1/auth/code/verify', {
+    body: { email, code: letter?.code ?? '' },
+  });
+  const sessionCookie = res.cookies.find((c) => c.name === 'lch_session');
   check(
-    (await call('GET', '/api/v1/auth/me', { token })).statusCode === 200,
-    'GET /auth/me with token',
+    res.statusCode === 200 && sessionCookie?.httpOnly === true,
+    'verify → 200, httpOnly session cookie (account created)',
+    res,
+  );
+  const token = sessionCookie?.value ?? '';
+  const userId = String((json(res)['user'] as Json | undefined)?.['id']);
+  check(
+    json(await call('GET', '/api/v1/auth/me', { token }))['email'] === email,
+    'GET /auth/me with the cookie',
   );
   check(
     errorCode(await call('GET', '/api/v1/auth/me')) === 'UNAUTHENTICATED',
-    'GET /auth/me without token → 401',
+    'GET /auth/me without a session → 401',
   );
+  res = await call('POST', '/api/v1/orders', {
+    body: { planId: 'monthly' },
+    headers: {
+      cookie: `lch_session=${token}`,
+      'idempotency-key': randomUUID(),
+      origin: 'https://evil.example',
+    },
+  });
+  check(errorCode(res) === 'FORBIDDEN', 'cookie mutation from a foreign Origin → 403', res);
+  res = await call('POST', '/api/v1/auth/login', { body: { email, password: 'whatever-1' } });
+  check(res.statusCode === 404, 'password login is gone → 404', res);
 
   process.stdout.write('licenses: checkout\n');
   res = await call('GET', '/api/v1/plans');
@@ -217,8 +250,7 @@ async function scenario(app: App): Promise<void> {
     errorCode(await call('GET', '/api/v1/admin/licenses', { token })) === 'FORBIDDEN',
     'user → admin 403',
   );
-  res = await call('POST', '/api/v1/auth/login', { body: config.admin });
-  const admin = String(json(res)['token']);
+  const admin = sessionOf(await signIn(config.adminEmail));
   // Several owned licenses on the page, so an N+1 in the registry becomes visible in dbQueries.
   let issued: Json = {};
   for (let n = 0; n < 5; n += 1) {
@@ -259,17 +291,18 @@ async function scenario(app: App): Promise<void> {
   check((await call('POST', '/api/v1/auth/logout', { token })).statusCode === 204, 'logout → 204');
   check(
     errorCode(await call('GET', '/api/v1/auth/me', { token })) === 'UNAUTHENTICATED',
-    'old token → 401',
+    'old session → 401',
   );
 }
 
 async function main(): Promise<void> {
   process.stdout.write(`Smoke scenario on DATA_SOURCE=${config.dataSource}\n`);
-  const container = await createContainer({ ...config, debugHeaders: true });
+  // The memory mailer keeps the sign-in letters so the scenario can read its code.
+  const container = await createContainer({ ...config, debugHeaders: true, mailer: 'memory' });
   const app = buildApp(container);
   try {
     await app.ready();
-    await scenario(app);
+    await scenario(app, container.outbox ?? []);
     process.stdout.write(`Smoke test passed: ${passed} checks on ${config.dataSource}.\n`);
   } finally {
     await app.close();

@@ -1,10 +1,9 @@
 /**
  * CLI: `npm run db:seed [-- --users=20 --licenses=200]` — demo/load data, separate from migrations.
- * Password of every seeded user: SEED_PASSWORD (default below) — demo data only.
+ * Seeded users have no password (ADR 0011): they sign in by code like everyone else.
  */
 import dotenv from 'dotenv';
 import postgres from 'postgres';
-import { hashPassword } from './modules/auth/password.js';
 import { seedDemoData } from './shared/db/seed.js';
 
 dotenv.config({ quiet: true });
@@ -25,7 +24,6 @@ async function main(): Promise<void> {
     const result = await seedDemoData(sql, {
       users: intArg('users', 20),
       licenses: intArg('licenses', 200),
-      passwordHash: await hashPassword(process.env['SEED_PASSWORD'] ?? 'seed-password-01'),
     });
     process.stdout.write(
       `seed: +${result.usersInserted} users, +${result.licensesInserted} licenses\n`,

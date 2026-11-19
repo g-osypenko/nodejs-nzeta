@@ -3,6 +3,7 @@
  * the app with DEBUG_RUNTIME, k6 runs. Shared by load.ts, profile.ts and explain.ts.
  */
 import { spawnSync, type SpawnSyncOptions } from 'node:child_process';
+import { createHash, randomBytes } from 'node:crypto';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -11,8 +12,7 @@ export const COMPOSE = ['compose', '-f', join(ROOT, 'perf', 'compose.yml')];
 export const APP_URL = 'http://127.0.0.1:3900';
 export const OUT_DIR = join(ROOT, 'perf', 'out');
 export const DATA = { users: 2000, licenses: 200_000 };
-export const SEED_PASSWORD = 'seed-password-01';
-export const ADMIN = { email: 'admin@lch.local', password: 'perf-admin-password' };
+export const ADMIN_EMAIL = 'admin@lch.local';
 
 export function run(cmd: string, args: string[], opts: SpawnSyncOptions = {}): string {
   const res = spawnSync(cmd, args, {
@@ -98,24 +98,44 @@ export async function getJson<T>(path: string, init: RequestInit = {}): Promise<
   return (await res.json()) as T;
 }
 
+const PERF_EMAIL = /^[a-z0-9-]+@lch\.local$/;
+
 /**
- * A well-behaved client: on 503 AUTH_BUSY it waits Retry-After and tries again (ADR 0010).
- * The first "after" run proved the need — 50 parallel set-up logins were (correctly) shed.
+ * Ready sessions for the load scenarios, created straight in the stand's database (ADR 0011).
+ * Sign-in is by an emailed code, which a load script cannot read, and the set-up is not what is
+ * measured anyway. Only the SHA-256 of each token is stored, exactly as the app does.
+ * The values are fixed stand emails and hex digests (checked below), never user input.
  */
-export async function login(email: string, password: string): Promise<string> {
-  for (let attempt = 1; ; attempt += 1) {
-    const res = await fetch(`${APP_URL}/api/v1/auth/login`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email, password }),
-    });
-    if (res.ok) return ((await res.json()) as { token: string }).token;
-    if (res.status !== 503 || attempt >= 20) {
-      throw new Error(`login ${email} → ${res.status} ${await res.text()}`);
-    }
-    const retryAfterS = Number(res.headers.get('retry-after') ?? 1);
-    await new Promise((r) => setTimeout(r, retryAfterS * 1000));
-  }
+export function sessionsFor(emails: readonly string[]): string[] {
+  const tokens = emails.map(() => randomBytes(32).toString('base64url'));
+  const rows = emails.map((email, i) => {
+    if (!PERF_EMAIL.test(email)) throw new Error(`not a stand email: ${email}`);
+    const digest = createHash('sha256')
+      .update(tokens[i] ?? '')
+      .digest('hex');
+    return `('${digest}', '${email}')`;
+  });
+  const sql =
+    'INSERT INTO sessions (token_hash, user_id, expires_at) ' +
+    `SELECT v.h, u.id, now() + interval '1 day' FROM (VALUES ${rows.join(', ')}) AS v(h, email) ` +
+    'JOIN users u ON u.email = v.email';
+  const out = run('docker', [
+    ...COMPOSE,
+    'exec',
+    '-T',
+    'db',
+    'psql',
+    '-U',
+    'lch',
+    '-d',
+    'lch_perf',
+    '-v',
+    'ON_ERROR_STOP=1',
+    '-c',
+    sql,
+  ]);
+  if (out !== `INSERT 0 ${emails.length}`) throw new Error(`sessions not created: ${out}`);
+  return tokens;
 }
 
 export interface K6Run {

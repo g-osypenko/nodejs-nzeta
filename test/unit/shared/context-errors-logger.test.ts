@@ -29,7 +29,6 @@ describe('AppError', () => {
   it.each([
     ['VALIDATION_ERROR', 400],
     ['UNAUTHENTICATED', 401],
-    ['INVALID_CREDENTIALS', 401],
     ['INVALID_WEBHOOK_SECRET', 401],
     ['FORBIDDEN', 403],
     ['KEY_BANNED', 403],
@@ -38,7 +37,6 @@ describe('AppError', () => {
     ['NOT_FOUND', 404],
     ['KEY_NOT_FOUND', 404],
     ['ROUTE_NOT_FOUND', 404],
-    ['EMAIL_TAKEN', 409],
     ['IDEMPOTENCY_CONFLICT', 409],
     ['ORDER_NOT_PAYABLE', 409],
     ['DB_UNAVAILABLE', 503],

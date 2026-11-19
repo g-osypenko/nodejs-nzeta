@@ -1,11 +1,22 @@
 import type { AppConfig } from './shared/config.js';
 import { assertDbReachable, createDb } from './shared/db/client.js';
 import { createMemoryStore } from './shared/db/memory-store.js';
-import type { AuthRepository } from './modules/auth/auth.repository.js';
-import { createMemoryAuthRepository } from './modules/auth/auth.repository.memory.js';
-import { createPostgresAuthRepository } from './modules/auth/auth.repository.postgres.js';
-import type { AuthService } from '@lch/auth-core';
+import type { AuthRepository, LoginCodeRepository } from './modules/auth/auth.repository.js';
+import {
+  createMemoryAuthRepository,
+  createMemoryLoginCodeRepository,
+} from './modules/auth/auth.repository.memory.js';
+import {
+  createPostgresAuthRepository,
+  createPostgresLoginCodeRepository,
+} from './modules/auth/auth.repository.postgres.js';
+import type { AuthService, Mailer } from '@lch/auth-core';
 import { createAppAuth } from './modules/auth/auth.adapters.js';
+import {
+  createConsoleMailer,
+  createMemoryMailer,
+  type SentMail,
+} from './modules/auth/auth.mailer.js';
 import type { ConfigsRepository } from './modules/configs/configs.repository.js';
 import { createMemoryConfigsRepository } from './modules/configs/configs.repository.memory.js';
 import { createPostgresConfigsRepository } from './modules/configs/configs.repository.postgres.js';
@@ -24,6 +35,7 @@ import { createLoaderService, type LoaderService } from './modules/loader/loader
 
 export interface Repositories {
   auth: AuthRepository;
+  loginCodes: LoginCodeRepository;
   licenses: LicensesRepository;
   configs: ConfigsRepository;
   loader: LoaderRepository;
@@ -39,6 +51,8 @@ export interface Services {
 export interface Container {
   config: AppConfig;
   services: Services;
+  /** Letters of MAILER=memory (tests, smoke); `null` for the other mailers. */
+  outbox: readonly SentMail[] | null;
   /** Throws if a backing resource is unavailable (used by GET /health). */
   checkHealth(): Promise<'memory' | 'up'>;
   close(): Promise<void>;
@@ -55,6 +69,7 @@ function createMemoryDataLayer(): DataLayer {
   return {
     repos: {
       auth: createMemoryAuthRepository(store),
+      loginCodes: createMemoryLoginCodeRepository(store),
       licenses: createMemoryLicensesRepository(store),
       configs: createMemoryConfigsRepository(store),
       loader: createMemoryLoaderRepository(store),
@@ -79,6 +94,7 @@ async function createPostgresDataLayer(config: AppConfig): Promise<DataLayer> {
   const layer: DataLayer = {
     repos: {
       auth: createPostgresAuthRepository(sql),
+      loginCodes: createPostgresLoginCodeRepository(sql),
       licenses: createPostgresLicensesRepository(sql),
       configs: createPostgresConfigsRepository(sql),
       loader: createPostgresLoaderRepository(sql),
@@ -103,12 +119,26 @@ export async function createContainer(config: AppConfig): Promise<Container> {
       : createMemoryDataLayer();
   const { repos } = data;
 
+  // Sign-in letters (ADR 0011): no real sending until the product has a domain.
+  const appBaseUrl = config.appBaseUrl ?? `http://${config.host}:${config.port}`;
+  let mailer: Mailer;
+  let outbox: SentMail[] | null = null;
+  if (config.mailer === 'memory') {
+    const memory = createMemoryMailer(appBaseUrl);
+    mailer = memory.mailer;
+    outbox = memory.outbox;
+  } else {
+    mailer = createConsoleMailer(appBaseUrl);
+  }
+
   const services: Services = {
     auth: createAppAuth({
       store: repos.auth,
+      codes: repos.loginCodes,
+      mailer,
       sessionTtlHours: config.sessionTtlHours,
-      hashing: config.authHashing,
-    }).service,
+      codeTtlMinutes: config.loginCodeTtlMinutes,
+    }),
     licenses: createLicensesService({
       repo: repos.licenses,
       webhookSecret: config.webhookSecret,
@@ -117,7 +147,8 @@ export async function createContainer(config: AppConfig): Promise<Container> {
     loader: createLoaderService({ repo: repos.loader }),
   };
 
-  await services.auth.ensureAdmin(config.admin.email, config.admin.password);
+  // The admin has no password either: the account exists with role ADMIN and signs in by code.
+  await services.auth.ensureAdmin(config.adminEmail);
 
-  return { config, services, checkHealth: data.checkHealth, close: data.close };
+  return { config, services, outbox, checkHealth: data.checkHealth, close: data.close };
 }

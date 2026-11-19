@@ -131,7 +131,7 @@ jobs:
         run: |
           docker run -d --name app -p 3000:3000 \
             -e DATA_SOURCE=memory -e WEBHOOK_SECRET=ci-container-secret-01 \
-            -e ADMIN_EMAIL=admin@lch.local -e ADMIN_PASSWORD=ci-admin-password \
+            -e ADMIN_EMAIL=admin@lch.local \
             "$IMAGE:$GITHUB_SHA"
           # curl alone decides readiness: in `curl | jq` the exit status is jq's (0 on empty input).
           body=""

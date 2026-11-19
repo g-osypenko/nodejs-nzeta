@@ -12,7 +12,7 @@ describe('seed is separate from migrations and idempotent (spec §8)', () => {
       const [before] = await s.db`SELECT count(*)::int AS n FROM licenses`;
       expect(before?.['n']).toBe(0);
 
-      const opts = { users: 3, licenses: 40, passwordHash: 'scrypt$x' };
+      const opts = { users: 3, licenses: 40 };
       expect(await seedDemoData(s.db, opts)).toEqual({ usersInserted: 3, licensesInserted: 40 });
       expect(await seedDemoData(s.db, opts)).toEqual({ usersInserted: 0, licensesInserted: 0 });
 
@@ -44,9 +44,9 @@ describe('seed is separate from migrations and idempotent (spec §8)', () => {
     const s = await createScratchDb('seed');
     try {
       await runMigrations(s.url);
-      await expect(
-        seedDemoData(s.db, { users: 0, licenses: 5, passwordHash: 'x' }),
-      ).rejects.toThrow('at least one user');
+      await expect(seedDemoData(s.db, { users: 0, licenses: 5 })).rejects.toThrow(
+        'at least one user',
+      );
     } finally {
       await s.drop();
     }
