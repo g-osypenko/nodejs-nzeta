@@ -9,6 +9,7 @@ import dotenv from 'dotenv';
 import type { LightMyRequestResponse } from 'fastify';
 import { buildApp, type App } from './app.js';
 import { createContainer } from './container.js';
+import type { SentMail } from './modules/auth/auth.mailer.js';
 import { loadConfig } from './shared/config.js';
 import { logger } from './shared/logger.js';
 
@@ -39,7 +40,7 @@ const json = (res: LightMyRequestResponse): Json => res.json<Json>();
 const errorCode = (res: LightMyRequestResponse): unknown =>
   (json(res)['error'] as Json | undefined)?.['code'];
 
-async function scenario(app: App): Promise<void> {
+async function scenario(app: App, outbox: readonly SentMail[]): Promise<void> {
   const call = (
     method: 'GET' | 'POST' | 'PUT' | 'DELETE',
     url: string,
@@ -90,6 +91,32 @@ async function scenario(app: App): Promise<void> {
     errorCode(await call('GET', '/api/v1/auth/me')) === 'UNAUTHENTICATED',
     'GET /auth/me without token → 401',
   );
+
+  process.stdout.write('auth: sign-in by emailed code (ADR 0011)\n');
+  const otpEmail = `smoke-otp+${Date.now()}@lch.local`;
+  res = await call('POST', '/api/v1/auth/code', { body: { email: otpEmail } });
+  check(res.statusCode === 202, 'request code → 202', res);
+  const letter = outbox.filter((m) => m.to === otpEmail).at(-1);
+  check(letter !== undefined && /^\d{6}$/.test(letter.code), 'letter with a 6-digit code');
+  res = await call('POST', '/api/v1/auth/code/verify', {
+    body: { email: otpEmail, code: letter?.code ?? '' },
+  });
+  const sessionCookie = res.cookies.find((c) => c.name === 'lch_session');
+  check(
+    res.statusCode === 200 && sessionCookie?.httpOnly === true,
+    'verify → httpOnly cookie',
+    res,
+  );
+  const cookie = `lch_session=${sessionCookie?.value ?? ''}`;
+  check(
+    json(await call('GET', '/api/v1/auth/me', { headers: { cookie } }))['email'] === otpEmail,
+    'GET /auth/me with the cookie',
+  );
+  res = await call('POST', '/api/v1/orders', {
+    body: { planId: 'monthly' },
+    headers: { cookie, 'idempotency-key': randomUUID(), origin: 'https://evil.example' },
+  });
+  check(errorCode(res) === 'FORBIDDEN', 'cookie mutation from a foreign Origin → 403', res);
 
   process.stdout.write('licenses: checkout\n');
   res = await call('GET', '/api/v1/plans');
@@ -265,11 +292,12 @@ async function scenario(app: App): Promise<void> {
 
 async function main(): Promise<void> {
   process.stdout.write(`Smoke scenario on DATA_SOURCE=${config.dataSource}\n`);
-  const container = await createContainer({ ...config, debugHeaders: true });
+  // The memory mailer keeps the sign-in letters so the scenario can read its code.
+  const container = await createContainer({ ...config, debugHeaders: true, mailer: 'memory' });
   const app = buildApp(container);
   try {
     await app.ready();
-    await scenario(app);
+    await scenario(app, container.outbox ?? []);
     process.stdout.write(`Smoke test passed: ${passed} checks on ${config.dataSource}.\n`);
   } finally {
     await app.close();
