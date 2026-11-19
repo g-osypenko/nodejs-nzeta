@@ -1,0 +1,200 @@
+# CI that blocks merging + CD to staging (spec.md §8, ADR 0006).
+# Required checks on main (branch protection): check, build, test, commits, docker.
+name: ci
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  # Manual run: publishes the image of any branch (bootstrap of the Render service); deploys only from main.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Explicit bash = `bash -eo pipefail`: a failing command inside a pipe fails the step.
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  HUSKY: 0 # git hooks are for developers; CI runs the same checks explicitly
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  check:
+    name: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: style (prettier) · lint (eslint) · types (tsc)
+        run: npm run check
+
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: smoke — every endpoint of spec §1 (in-memory)
+        run: npm run smoke
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: unit + integration (Testcontainers Postgres) with coverage thresholds (spec §6.1)
+        run: npm run test:coverage
+      - name: e2e — built server process + Postgres over HTTP
+        run: npm run test:e2e
+      - name: coverage report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage
+          path: reports/coverage
+          retention-days: 14
+
+  commits:
+    name: commits
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: every commit of the PR follows Conventional Commits
+        run: >-
+          npx commitlint --verbose
+          --from ${{ github.event.pull_request.base.sha }}
+          --to ${{ github.event.pull_request.head.sha }}
+
+  docker:
+    name: docker
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: build image (commit SHA baked in as GIT_COMMIT)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          load: true
+          tags: ${{ env.IMAGE }}:${{ github.sha }}
+          build-args: GIT_COMMIT=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: container starts and /version reports this commit
+        run: |
+          docker run -d --name app -p 3000:3000 \
+            -e DATA_SOURCE=memory -e WEBHOOK_SECRET=ci-container-secret-01 \
+            -e ADMIN_EMAIL=admin@lch.local -e ADMIN_PASSWORD=ci-admin-password \
+            "$IMAGE:$GITHUB_SHA"
+          # curl alone decides readiness: in `curl | jq` the exit status is jq's (0 on empty input).
+          body=""
+          for _ in $(seq 30); do
+            if body=$(curl -fsS http://127.0.0.1:3000/version 2>/dev/null); then break; fi
+            sleep 1
+          done
+          docker logs app | tail -n 5
+          got=$(printf '%s' "$body" | jq -r .commit)
+          echo "/version → $got"
+          test "$got" = "$GITHUB_SHA"
+          curl -fsS http://127.0.0.1:3000/api/v1/plans | jq -e 'length == 3'
+      - name: log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: publish the tested image
+        if: github.event_name != 'pull_request'
+        run: docker push "$IMAGE:$GITHUB_SHA"
+
+  deploy:
+    name: deploy (staging)
+    needs: [check, build, test, docker]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: staging
+      url: ${{ vars.STAGING_URL }}
+    concurrency:
+      group: deploy-staging
+      cancel-in-progress: false # never interrupt a deploy half-way
+    permissions:
+      contents: read
+      packages: read
+    env:
+      DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+      STAGING_URL: ${{ vars.STAGING_URL }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: staging is configured
+        run: |
+          for v in DATABASE_URL STAGING_URL RENDER_DEPLOY_HOOK; do
+            [ -n "${!v}" ] || { echo "::error::$v is not set in the 'staging' environment"; exit 1; }
+          done
+        env:
+          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - run: docker pull "$IMAGE:$GITHUB_SHA"
+      # Zero-downtime migrations (ADR 0007): three separate steps, before the new version gets traffic.
+      - name: migrate — schema (blocking DDL, lock_timeout)
+        run: docker run --rm -e DATABASE_URL "$IMAGE:$GITHUB_SHA" node dist/shared/db/migrate.js --phase=schema
+      - name: migrate — data (batched, non-blocking)
+        run: docker run --rm -e DATABASE_URL "$IMAGE:$GITHUB_SHA" node dist/shared/db/migrate.js --phase=data
+      - name: migrate — indexes (CONCURRENTLY)
+        run: docker run --rm -e DATABASE_URL "$IMAGE:$GITHUB_SHA" node dist/shared/db/migrate.js --phase=indexes
+      - name: trigger Render deploy of this exact image
+        env:
+          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+        run: |
+          img=$(jq -rn --arg v "$IMAGE:$GITHUB_SHA" '$v|@uri')
+          curl -fsS -X POST "${RENDER_DEPLOY_HOOK}&imgURL=${img}" -o /dev/null
+      - name: wait until /version reports this commit (no downtime during the switch)
+        run: scripts/ci/wait-for-version.sh "$STAGING_URL" "$GITHUB_SHA" 600
+      - name: staging smoke
+        run: |
+          curl -fsS "$STAGING_URL/health" | jq -e '.status == "OK"'
+          curl -fsS "$STAGING_URL/api/v1/plans" | jq -e 'length == 3'

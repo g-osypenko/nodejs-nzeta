@@ -26,7 +26,8 @@
     "test:e2e": "npm run build && vitest run --project e2e",
     "test:all": "npm run build && vitest run",
     "test:coverage": "vitest run --project unit --project integration --coverage",
-    "test:mutation": "stryker run"
+    "test:mutation": "stryker run",
+    "db:seed": "tsx src/seed.ts"
   },
   "dependencies": {
     "@fastify/cors": "^11.3.0",
@@ -37,6 +38,8 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@commitlint/cli": "21.2.4",
+    "@commitlint/config-conventional": "21.2.4",
     "@stryker-mutator/core": "10.0.0",
     "@stryker-mutator/typescript-checker": "10.0.0",
     "@stryker-mutator/vitest-runner": "10.0.0",

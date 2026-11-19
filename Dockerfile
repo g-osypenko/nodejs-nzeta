@@ -1,0 +1,39 @@
+# syntax=docker/dockerfile:1
+# Production image of License & Config Hub (spec.md §8, ADR 0006).
+# The same image runs the app (CMD) and the migration/seed steps of CD:
+#   docker run --rm -e DATABASE_URL=… <image> node dist/shared/db/migrate.js --phase=schema
+
+ARG NODE_IMAGE=node:22.23.4-alpine3.24
+
+FROM ${NODE_IMAGE} AS build
+WORKDIR /app
+COPY package.json package-lock.json ./
+# --ignore-scripts: no husky `prepare` inside the image
+RUN npm ci --ignore-scripts
+COPY tsconfig.json tsconfig.build.json ./
+COPY src ./src
+RUN npm run build
+
+FROM ${NODE_IMAGE} AS prod-deps
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
+
+FROM ${NODE_IMAGE}
+ENV NODE_ENV=production \
+    HOST=0.0.0.0 \
+    PORT=3000
+WORKDIR /app
+COPY --from=prod-deps /app/node_modules ./node_modules
+COPY --from=build /app/dist ./dist
+COPY package.json ./
+COPY migrations ./migrations
+# SHA of the deployed commit → GET /version (spec.md §8, CD criterion 2)
+ARG GIT_COMMIT=unknown
+ENV GIT_COMMIT=${GIT_COMMIT}
+USER node
+EXPOSE 3000
+# Liveness only (no DB): readiness for traffic switching is the platform health check on /health.
+HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --retries=3 \
+  CMD wget -qO- "http://127.0.0.1:${PORT}/version" >/dev/null || exit 1
+CMD ["node", "dist/index.js"]
